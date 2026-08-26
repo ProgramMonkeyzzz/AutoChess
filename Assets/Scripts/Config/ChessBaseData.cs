@@ -1,18 +1,20 @@
+using System;
 using UnityEngine;
 
 namespace Config
 {
-    [CreateAssetMenu(menuName = "Chess/ChessBaseData")]
-    public class ChessBaseData : ScriptableObject
+    [Serializable]
+    public class ChessBaseData
     {
         public const float Radius = 0.5f;
         
-        public int Id;
+        public int ChessId;
         public string Name;
-        public int Hp;
+        public int MaxHp;
         public int Atk;
         public int Range;
         public int MoveSpeed;
         public int AtkSpeed;
+        public float WindUpTime;
     }
 }
