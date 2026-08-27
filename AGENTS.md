@@ -1,6 +1,6 @@
 ## Project Overview
 
-这是一个基于 Unity 2022.3.62f2c1 的自走棋（AutoChess）游戏项目。集成了 A* 寻路系统和 UniTask 异步任务库。请使用全中文与我沟通；代码、路径、命令和标识符可保留原文。
+这是一个基于 Unity 2022.3.62f2c1 的自走棋（AutoChess）游戏项目。集成了 A* 寻路系统和 UniTask 异步任务库。请使用全中文与我沟通；代码、路径、命令和标识符可保留原文。修改或新增的代码内容需要添加注释。
 
 ## Architecture
 
@@ -14,13 +14,34 @@
 
 ### Chess System
 
-棋子系统由三个核心类组成：
+棋子系统由棋子控制器、配置/运行时数据和有限状态机组成：
 
 - **ChessController**: 棋子控制器，持有棋子的完整状态
   - 包含 `ChessBaseData`（静态配置）和 `ChessRuntimeData`（运行时数据）
   - 持有 `ChessTargetSelector` 用于目标选择
+  - 持有 `Chess.FSM.FSM` 作为战斗状态机（当前仅声明字段，尚未在控制器内初始化或启动）
 - **ChessBaseData**: 棋子的静态配置数据（从 ScriptableObject 导出）
+  - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`HitApplySpeed`
+  - `ChessBaseDataSo` 与 `ChessBaseData` 的字段必须保持一一对应，修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
+
+### Chess FSM
+
+棋子状态机位于 `Assets/Scripts/Battle/Chess/FSM/`，命名空间为 `Chess.FSM`：
+
+- **FSM**: 绑定到一个 `ChessController`，按状态类型注册状态，按源状态类型注册转换
+- **StateBase**: 状态基类，生命周期为 `OnStateEnter` / `OnStateStay` / `OnStateExit`
+- **StateTransition** / **StateTransition<State1, State2>**: 从 `State1` 转到 `State2`，由 `CanTransition()` 决定是否触发
+
+使用约定：
+
+1. 用同一个 `FSM` 实例构造状态和转换
+2. 先 `AddState`，再 `AddTransition`（源状态和目标状态都必须已注册）
+3. `Start<TState>()` 进入初始状态；重复启动会抛异常
+4. 每帧调用 `Tick()`：先按注册顺序检查当前状态的转换（第一个满足条件的生效），再对切换后的当前状态调用 `OnStateStay`
+5. `ChangeState<TState>()` 可显式切状态；切到当前状态时返回 `false` 且不重入生命周期
+
+当前仓库只提供 FSM 框架和测试用状态，尚未实现 Idle/Attack 等正式战斗状态。
 
 ### Config Pipeline
 
@@ -36,6 +57,7 @@
 
 - `Assets/Scripts/Battle/`: 战斗系统核心代码
   - `Chess/`: 棋子相关逻辑
+    - `FSM/`: 棋子有限状态机
   - `Camp/`: 阵营管理逻辑
 - `Assets/Scripts/Config/`: 运行时配置数据结构
 - `Assets/Scripts/Editor/`: 编辑器工具和 ScriptableObject 定义
@@ -55,7 +77,9 @@
 ### Unity Tests
 
 - 项目通过 `com.unity.feature.development` 集成 Unity Test Framework，测试使用 NUnit API。
-- 当前测试位于 `Assets/Tests/Editor/`，均为 EditMode 测试；`ConfigBinaryExporterTests` 覆盖配置的递归导出、字段序列化和重复导出覆盖行为。目前没有 PlayMode 测试。
+- 当前测试位于 `Assets/Tests/Editor/`，均为 EditMode 测试；目前没有 PlayMode 测试。
+  - `ConfigBinaryExporterTests` 覆盖配置的递归导出、字段序列化和重复导出覆盖行为
+  - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先生效，以及重复/跨实例注册校验
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -70,7 +94,8 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 
 - 命令执行后检查退出码、`TestResults.xml` 和 `UnityTest.log`；运行命令行测试前应关闭正在打开同一项目的 Unity 编辑器，避免项目锁冲突。
 - 新增编辑器测试时放入 `Assets/Tests/Editor/`，使用 `[SetUp]`/`[TearDown]` 清理测试创建的资源。涉及 `AssetDatabase` 或配置导出的测试必须使用专用临时目录（例如 `__TestName`），不得修改或删除 `Assets/Configs/` 与 `Assets/Resources/Configs/` 下的正式数据。
-- 修改编辑器工具、配置导出逻辑或序列化数据结构后，至少运行全部 EditMode 测试；若以后新增 PlayMode 测试，则放入 `Assets/Tests/PlayMode/` 并使用 `-testPlatform PlayMode` 单独运行。
+- 修改编辑器工具、配置导出逻辑、序列化数据结构或棋子 FSM 后，至少运行全部 EditMode 测试；若以后新增 PlayMode 测试，则放入 `Assets/Tests/PlayMode/` 并使用 `-testPlatform PlayMode` 单独运行。
+- 测试通过后，根据修改的内容按需更新 AGENTS.md 以及 CLAUDE.md。
 
 ### Generating Configs
 
@@ -85,6 +110,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - `AutoChess.Utils`: 通用工具类
 - `AutoChess.Editor`: 编辑器工具
 - `Chess`: 棋子系统
+- `Chess.FSM`: 棋子有限状态机
 - `Camp`: 阵营系统
 - `Config`: 配置数据结构
 - `Editor`: ScriptableObject 和编辑器专用类型
@@ -105,5 +131,9 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 ## Common Pitfalls
 
 - 修改 `ChessBaseDataSo` 后忘记重新导出配置会导致运行时数据不一致
+- `ChessBaseDataSo` 与 `ChessBaseData` 字段不同步时，导出/反序列化会丢失或错位数据；新增如 `HitApplySpeed` 的字段时必须同时改两边
 - `BinaryFormatter` 已在 .NET 5+ 中标记为过时，但 Unity 2022 仍然支持
 - 阵营系统使用两层字典结构，操作时注意空引用检查
+- FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
+- `Tick()` 在 Stay 之前先处理转换，因此转换成功后 `OnStateStay` 会落在新状态上
+- `ChessController` 目前只持有 `_fsm` 字段，尚未完成状态注册与启动，接入战斗循环前不要假设状态机已经在跑

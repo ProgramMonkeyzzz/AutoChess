@@ -13,6 +13,7 @@ namespace Chess
         private ChessBaseData _chessBaseData;
         private ChessRuntimeData _chessRuntimeData;
         private CampGroup _campGroup;
+        private FSM.FSM _fsm;
 
         public int Camp => _camp;
         public ChessRuntimeData RuntimeData => _chessRuntimeData;

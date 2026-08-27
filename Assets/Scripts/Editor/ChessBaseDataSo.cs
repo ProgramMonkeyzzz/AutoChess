@@ -13,5 +13,6 @@ namespace Editor
         public int MoveSpeed;
         public int AtkSpeed;
         public float WindUpTime;
+        public float HitApplySpeed;
     }
 }
