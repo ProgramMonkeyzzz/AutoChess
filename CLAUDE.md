@@ -19,14 +19,15 @@
 - **ChessController**: 棋子控制器，持有棋子的完整状态
   - 包含 `ChessBaseData`（静态配置）和 `ChessRuntimeData`（运行时数据）
   - 持有 `ChessTargetSelector` 用于目标选择
-  - 持有 `Chess.FSM.FSM` 作为战斗状态机（当前仅声明字段，尚未在控制器内初始化或启动）
+  - 构造时创建并启动 `Chess.FSM.FSM`，默认状态为 `MovementState`
+  - 战斗循环通过 `ChessController.Tick()` 统一驱动当前状态
 - **ChessBaseData**: 棋子的静态配置数据（从 ScriptableObject 导出）
   - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`HitApplySpeed`
   - `ChessBaseDataSo` 与 `ChessBaseData` 的字段必须保持一一对应，修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
 - **ChessMovementController**: 单个棋子的 A* 移动控制器
   - 通过注入 `IAstarAI` 控制固定 XZ 坐标移动或追踪另一个棋子
-  - 调用方需要每帧调用 `Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
+  - `MovementState` 每帧调用其 `Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
   - 棋子预制体需要配置 `RVOController`，半径固定为 `0.5f`
 
 ### Chess FSM
@@ -36,6 +37,7 @@
 - **FSM**: 绑定到一个 `ChessController`，按状态类型注册状态，按源状态类型注册转换
 - **StateBase**: 状态基类，生命周期为 `OnStateEnter` / `OnStateStay` / `OnStateExit`
 - **StateTransition** / **StateTransition<State1, State2>**: 从 `State1` 转到 `State2`，由 `CanTransition()` 决定是否触发
+- **MovementState**: 所有棋子的默认状态，同时承载静止待机和移动控制；退出时停止并清除移动命令
 
 使用约定：
 
@@ -45,7 +47,7 @@
 4. 每帧调用 `Tick()`：先按注册顺序检查当前状态的转换（第一个满足条件的生效），再对切换后的当前状态调用 `OnStateStay`
 5. `ChangeState<TState>()` 可显式切状态；切到当前状态时返回 `false` 且不重入生命周期
 
-当前仓库只提供 FSM 框架和测试用状态，尚未实现 Idle/Attack 等正式战斗状态。
+当前仓库已实现正式的默认 `MovementState`，尚未实现 Attack/Dead 等其他正式战斗状态。
 
 ### Config Pipeline
 
@@ -84,6 +86,7 @@
 - 当前测试位于 `Assets/Tests/Editor/`，均为 EditMode 测试；目前没有 PlayMode 测试。
   - `ConfigBinaryExporterTests` 覆盖配置的递归导出、字段序列化和重复导出覆盖行为
   - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先生效，以及重复/跨实例注册校验
+  - `ChessMovementControllerTests` 覆盖移动命令、默认 `MovementState`、统一 Tick、状态退出清理和成功移动命令回切行为
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -140,6 +143,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 阵营系统使用两层字典结构，操作时注意空引用检查
 - FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
 - `Tick()` 在 Stay 之前先处理转换，因此转换成功后 `OnStateStay` 会落在新状态上
-- `ChessController` 的 FSM 仍未完成状态注册与启动，接入战斗循环前不要假设状态机已经在跑
-- `ChessMovementController` 的坐标使用 XZ 平面，调用方必须每帧调用 `Tick()` 才能保持 `CurrentPosition` 同步
+- `ChessController` 创建后 FSM 已处于 `MovementState`；战斗循环应调用 `ChessController.Tick()`，不要再单独驱动 `ChessMovementController.Tick()`
+- 离开 `MovementState` 会停止并清除当前移动命令；成功的新移动命令会自动切回该状态
+- `ChessMovementController` 的坐标使用 XZ 平面，`MovementState` 负责每帧同步 `CurrentPosition`
 - 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝

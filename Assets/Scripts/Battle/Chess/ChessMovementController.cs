@@ -126,6 +126,8 @@ namespace Chess
                 return false;
             }
 
+            // 只有成功建立路径后才打断其他状态并进入移动状态。
+            _chessController.EnterMovementState();
             return true;
         }
 
@@ -157,6 +159,8 @@ namespace Chess
                 return false;
             }
 
+            // 目标已进入安全距离也属于 MovementState 下的静止待机。
+            _chessController.EnterMovementState();
             return true;
         }
 
