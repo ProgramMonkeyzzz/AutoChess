@@ -24,6 +24,10 @@
   - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`HitApplySpeed`
   - `ChessBaseDataSo` 与 `ChessBaseData` 的字段必须保持一一对应，修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
+- **ChessMovementController**: 单个棋子的 A* 移动控制器
+  - 通过注入 `IAstarAI` 控制固定 XZ 坐标移动或追踪另一个棋子
+  - 调用方需要每帧调用 `Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
+  - 棋子预制体需要配置 `RVOController`，半径固定为 `0.5f`
 
 ### Chess FSM
 
@@ -136,4 +140,6 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 阵营系统使用两层字典结构，操作时注意空引用检查
 - FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
 - `Tick()` 在 Stay 之前先处理转换，因此转换成功后 `OnStateStay` 会落在新状态上
-- `ChessController` 目前只持有 `_fsm` 字段，尚未完成状态注册与启动，接入战斗循环前不要假设状态机已经在跑
+- `ChessController` 的 FSM 仍未完成状态注册与启动，接入战斗循环前不要假设状态机已经在跑
+- `ChessMovementController` 的坐标使用 XZ 平面，调用方必须每帧调用 `Tick()` 才能保持 `CurrentPosition` 同步
+- 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝
