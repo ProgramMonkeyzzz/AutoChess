@@ -60,7 +60,7 @@ namespace Chess
             {
                 if (IsWindingUp)
                 {
-                    if (!IsValidTarget(_windUpTarget))
+                    if (!IsValidWindUpTarget(_windUpTarget))
                     {
                         StopAttack();
                         return;
@@ -77,7 +77,7 @@ namespace Chess
                     ChessController target = _windUpTarget;
                     _windUpTarget = null;
 
-                    if (!IsValidTarget(target))
+                    if (!IsValidWindUpTarget(target))
                     {
                         return;
                     }
@@ -160,7 +160,7 @@ namespace Chess
         private bool TryStartAttack()
         {
             ChessController target = _chessController.TargetSelector?.SelectedChessController;
-            if (!IsValidTarget(target))
+            if (!IsValidAttackStartTarget(target))
             {
                 return false;
             }
@@ -181,19 +181,32 @@ namespace Chess
         }
 
         /// <summary>
-        /// 检查目标是否仍为当前索敌目标、存活且处于攻击射程内。
+        /// 检查目标是否满足攻击启动条件，包括当前索敌目标、存活状态和攻击射程。
         /// </summary>
-        private bool IsValidTarget(ChessController target)
+        private bool IsValidAttackStartTarget(ChessController target)
         {
-            if (target == null || ReferenceEquals(target, _chessController)
-                || !ReferenceEquals(_chessController.TargetSelector?.SelectedChessController, target)
-                || IsDead(target) || target.RuntimeData == null || _chessController.RuntimeData == null)
+            if (!IsValidWindUpTarget(target) || _chessController.RuntimeData == null)
             {
                 return false;
             }
 
             return Vector2.Distance(_chessController.RuntimeData.CurrentPosition,
                        target.RuntimeData.CurrentPosition) <= _chessController.BaseData.Range;
+        }
+
+        /// <summary>
+        /// 检查前摇锁定目标是否仍存在、未替换且存活，不重新检查攻击射程。
+        /// </summary>
+        private bool IsValidWindUpTarget(ChessController target)
+        {
+            if (target == null || ReferenceEquals(target, _chessController)
+                || !ReferenceEquals(_chessController.TargetSelector?.SelectedChessController, target)
+                || IsDead(target))
+            {
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>

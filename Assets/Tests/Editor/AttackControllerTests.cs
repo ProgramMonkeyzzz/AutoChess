@@ -119,19 +119,38 @@ public class AttackControllerTests
     }
 
     /// <summary>
-    /// 验证前摇期间目标失去射程后会取消本次攻击。
+    /// 验证前摇锁定成功后目标离开射程仍会完成攻击并开始冷却。
     /// </summary>
     [Test]
-    public void TargetLeavingRangeDuringWindUpCancelsAttack()
+    public void TargetLeavingRangeDuringWindUpStillTakesDamage()
     {
         _attacker.AttackController.Tick(0f);
         _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
 
         _attacker.AttackController.Tick(0.5f);
 
-        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
         Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
-        Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0f));
+        Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0.5f).Within(0.0001f));
+    }
+
+    /// <summary>
+    /// 验证有无前摇时，目标在攻击启动前已处于射程外都不会进入攻击流程。
+    /// </summary>
+    [TestCase(0f)]
+    [TestCase(0.5f)]
+    public void TargetOutsideRangeBeforeAttackDoesNotStartAttack(float windUpTime)
+    {
+        _attacker = new ChessController(CreateConfig(100, 12, 5, 2, windUpTime));
+        _attacker.RuntimeData.CurrentPosition = Vector2.zero;
+        _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+        SelectTarget(_attacker, _target);
+
+        _attacker.AttackController.Tick(0.5f);
+
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_attacker.AttackController.IsAttackInProgress, Is.False);
     }
 
     /// <summary>
@@ -149,6 +168,41 @@ public class AttackControllerTests
 
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
         Assert.That(replacement.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0f));
+    }
+
+    /// <summary>
+    /// 验证前摇期间当前索敌引用失效后会取消本次攻击。
+    /// </summary>
+    [Test]
+    public void ClearedTargetDuringWindUpCancelsAttack()
+    {
+        _attacker.AttackController.Tick(0f);
+        SelectTarget(_attacker, null);
+
+        _attacker.AttackController.Tick(0.5f);
+
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0f));
+    }
+
+    /// <summary>
+    /// 验证前摇期间锁定目标死亡后会取消本次攻击。
+    /// </summary>
+    [Test]
+    public void DeadTargetDuringWindUpCancelsAttack()
+    {
+        _attacker.AttackController.Tick(0f);
+        _target.DamageReceiver.ApplyDamage(100);
+
+        _attacker.AttackController.Tick(0.5f);
+
+        Assert.That(_target.Fsm.CurrentState, Is.TypeOf<DeadState>());
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(0));
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0f));
     }
 
     /// <summary>
@@ -187,6 +241,29 @@ public class AttackControllerTests
 
             Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
             Assert.That(bulletManager.ActiveBulletCount, Is.EqualTo(0));
+        }
+    }
+
+    /// <summary>
+    /// 验证正子弹速度攻击在前摇锁定后不会因目标离开射程而取消发射。
+    /// </summary>
+    [Test]
+    public void PositiveBulletSpeedSpawnsWhenTargetLeavesRangeDuringWindUp()
+    {
+        using (var bulletManager = new BulletManager())
+        {
+            _attacker = new ChessController(CreateConfig(100, 12, 5, 2, 0.5f, 10f));
+            _attacker.RuntimeData.CurrentPosition = Vector2.zero;
+            SelectTarget(_attacker, _target);
+
+            _attacker.Tick(0f);
+            _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+            _attacker.Tick(0.5f);
+
+            Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+            Assert.That(bulletManager.ActiveBulletCount, Is.EqualTo(1));
+            Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+            Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0.5f).Within(0.0001f));
         }
     }
 

@@ -34,9 +34,9 @@
   - `ChessController` 每帧调用 `ChessMovementController.Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
   - 棋子预制体需要配置 `RVOController`，半径固定为 `0.5f`
 - **AttackController**: 单个棋子的自动攻击控制器
-  - 仅攻击 `TargetSelector.SelectedChessController` 中仍存活且处于 `BaseData.Range` 内的目标
+  - 仅对 `TargetSelector.SelectedChessController` 中仍存活且处于 `BaseData.Range` 内的目标启动攻击
   - `AtkSpeed` 表示每秒攻击次数，命中后的攻击间隔为 `1 / AtkSpeed`
-  - 命中前必须完成 `WindUpTime` 前摇；前摇结束会再次校验目标，失效时取消本次攻击
+  - 命中前必须完成 `WindUpTime` 前摇；攻击启动时校验射程，前摇期间及结束时仅重新校验目标存活且仍为当前索敌目标，不再检查射程
   - `AtkSpeed <= 0` 或任一 `AtkSpeed`、`Range`、`WindUpTime` 为负值时不攻击
   - `BulletSpeed > 0` 时发送 `BulletSpawnEvent`，否则直接结算即时伤害
 
@@ -175,7 +175,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 通过 `ChessController.DamageReceiver.ApplyDamage()` 结算伤害后会立即检查 HP；HP 小于等于零时切换到 `DeadState`
 - 进入 `DeadState` 会停止并清除移动命令，死亡棋子拒绝新的移动命令，且不注册 `DeadState` 到 `MovementState` 的反向转换
 - `ChessController.Tick()` 会按 FSM、移动、攻击顺序更新；也可调用 `Tick(float deltaTime)` 精确推进攻击时间
-- 攻击伤害取攻击方 `ChessBaseData.Atk`，首次满足目标和射程条件时立即开始前摇，命中后才开始下一次攻击冷却
+- 攻击伤害取攻击方 `ChessBaseData.Atk`，首次满足目标和射程条件时立即开始前摇；前摇锁定后目标离开射程仍会完成攻击，命中后才开始下一次攻击冷却
 - 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止移动，退出取消前摇并保留冷却
 - 攻击状态下成功移动命令立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
 - `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
