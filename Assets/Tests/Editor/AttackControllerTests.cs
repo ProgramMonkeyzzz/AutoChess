@@ -28,8 +28,8 @@ public class AttackControllerTests
     public void ConfiguredChessInitializesAttackDataAndControllers()
     {
         Assert.That(_attacker.RuntimeData.Hp, Is.EqualTo(100));
-        Assert.That(_attacker.RuntimeData.Atk, Is.EqualTo(12));
-        Assert.That(_attacker.RuntimeData.Range, Is.EqualTo(5));
+        Assert.That(_attacker.RuntimeData.GetCurrentAtk(_attacker.BaseData.Atk), Is.EqualTo(12));
+        Assert.That(_attacker.RuntimeData.GetCurrentRange(_attacker.BaseData.Range), Is.EqualTo(5));
         Assert.That(_attacker.TargetSelector, Is.Not.Null);
         Assert.That(_attacker.AttackController, Is.Not.Null);
         Assert.That(_attacker.TargetSelector.SelectedChessController, Is.SameAs(_target));

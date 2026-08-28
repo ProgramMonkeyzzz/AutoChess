@@ -13,8 +13,8 @@ namespace Config
         public int MaxHp;
         public int Atk;
         public int Range;
-        public int MoveSpeed;
-        public int AtkSpeed;
+        public float MoveSpeed;
+        public float AtkSpeed;
         public float WindUpTime;
         public float HitApplySpeed;
     }

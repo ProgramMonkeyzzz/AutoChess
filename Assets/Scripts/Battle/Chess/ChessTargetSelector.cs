@@ -114,9 +114,10 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                if (enemy.RuntimeData.Range > maxRange)
+                int currentRange = enemy.RuntimeData.GetCurrentRange(enemy.BaseData.Range);
+                if (currentRange > maxRange)
                 {
-                    maxRange = enemy.RuntimeData.Range;
+                    maxRange = currentRange;
                     SelectedChessController = enemy;
                 }
             }
@@ -133,9 +134,10 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                if (enemy.RuntimeData.Atk > highestAtk)
+                int currentAtk = enemy.RuntimeData.GetCurrentAtk(enemy.BaseData.Atk);
+                if (currentAtk > highestAtk)
                 {
-                    highestAtk = enemy.RuntimeData.Atk;
+                    highestAtk = currentAtk;
                     SelectedChessController = enemy;
                 }
             }

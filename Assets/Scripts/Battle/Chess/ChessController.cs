@@ -65,8 +65,10 @@ namespace Chess
             if (_chessBaseData != null)
             {
                 _chessRuntimeData.Hp = _chessBaseData.MaxHp;
-                _chessRuntimeData.Atk = _chessBaseData.Atk;
-                _chessRuntimeData.Range = _chessBaseData.Range;
+                _chessRuntimeData.CurrentAtkMultipler = 1;
+                _chessRuntimeData.CurrentAtkIncrement = 0;
+                _chessRuntimeData.CurrentRangeMultipler = 1;
+                _chessRuntimeData.CurrentRangeIncrement = 0;
             }
 
             _targetSelector = new ChessTargetSelector(this);

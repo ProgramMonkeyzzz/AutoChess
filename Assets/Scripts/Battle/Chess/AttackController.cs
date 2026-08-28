@@ -78,7 +78,7 @@ namespace Chess
                         return;
                     }
 
-                    target.DamageReceiver.ApplyDamage(_chessController.BaseData.Atk);
+                    target.DamageReceiver.ApplyDamage(_chessController.RuntimeData.GetCurrentAtk(_chessController.BaseData.Atk));
                     _cooldownRemaining = GetAttackInterval();
                     continue;
                 }
@@ -166,7 +166,7 @@ namespace Chess
 
             if (_chessController.BaseData.WindUpTime <= 0f)
             {
-                target.DamageReceiver.ApplyDamage(_chessController.BaseData.Atk);
+                target.DamageReceiver.ApplyDamage(_chessController.RuntimeData.GetCurrentAtk(_chessController.BaseData.Atk));
                 _cooldownRemaining = GetAttackInterval();
                 return true;
             }
