@@ -23,6 +23,7 @@ public class ChessMovementControllerTests
         _board = new ChessBoard { Width = 20, Height = 20 };
         _astarAI = new FakeAstarAI { FakePosition = new Vector3(2f, 3f, 4f) };
         _owner = new ChessController();
+        _owner.RuntimeData.Hp = 100;
         // 通过棋子入口绑定移动控制器，确保状态能够驱动同一个实例。
         _movementController = _owner.InitializeMovement(_board, _astarAI);
     }
@@ -38,22 +39,109 @@ public class ChessMovementControllerTests
     }
 
     /// <summary>
+    /// 验证棋子创建后已注册死亡状态并绑定伤害接收器。
+    /// </summary>
+    [Test]
+    public void NewChessRegistersDeadStateAndDamageReceiver()
+    {
+        Assert.That(_owner.DamageReceiver, Is.Not.Null);
+        Assert.That(_owner.Fsm.ChangeState<DeadState>(), Is.True);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+    }
+
+    /// <summary>
+    /// 验证已注册的死亡转换会在移动状态 Tick 时响应归零的 HP。
+    /// </summary>
+    [Test]
+    public void ZeroHpTransitionsToDeadStateOnFsmTick()
+    {
+        _owner.RuntimeData.Hp = 0;
+
+        _owner.Fsm.Tick();
+
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+    }
+
+    /// <summary>
     /// 验证尚未绑定场景移动组件的棋子也可以安全更新默认状态。
     /// </summary>
     [Test]
     public void TickWithoutMovementControllerDoesNotThrow()
     {
         var chessController = new ChessController();
+        chessController.RuntimeData.Hp = 100;
 
         Assert.DoesNotThrow(chessController.Tick);
         Assert.That(chessController.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
     /// <summary>
-    /// 验证棋子统一 Tick 会经由 MovementState 同步运行时坐标。
+    /// 验证非致命伤害只扣除 HP，不切换棋子状态。
     /// </summary>
     [Test]
-    public void ChessTickUpdatesMovementThroughMovementState()
+    public void NonLethalDamageKeepsMovementState()
+    {
+        _owner.RuntimeData.Hp = 100;
+
+        _owner.DamageReceiver.ApplyDamage(30);
+
+        Assert.That(_owner.RuntimeData.Hp, Is.EqualTo(70));
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+    }
+
+    /// <summary>
+    /// 验证致命伤害会立即切换到死亡状态并停止已有移动。
+    /// </summary>
+    [Test]
+    public void LethalDamageImmediatelyEntersDeadState()
+    {
+        _owner.RuntimeData.Hp = 50;
+        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+
+        _owner.DamageReceiver.ApplyDamage(50);
+
+        Assert.That(_owner.RuntimeData.Hp, Is.EqualTo(0));
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+        Assert.That(_astarAI.isStopped, Is.True);
+        Assert.That(_movementController.HasDestination, Is.False);
+    }
+
+    /// <summary>
+    /// 验证过量伤害会将 HP 限制为零并保持死亡状态。
+    /// </summary>
+    [Test]
+    public void OverkillDamageClampsHpAndKeepsDeadState()
+    {
+        _owner.RuntimeData.Hp = 10;
+
+        _owner.DamageReceiver.ApplyDamage(100);
+        _owner.DamageReceiver.ApplyDamage(1);
+
+        Assert.That(_owner.RuntimeData.Hp, Is.EqualTo(0));
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+    }
+
+    /// <summary>
+    /// 验证死亡棋子不能建立新的固定坐标或目标追踪移动命令。
+    /// </summary>
+    [Test]
+    public void DeadChessRejectsNewMovementCommands()
+    {
+        _owner.RuntimeData.Hp = 1;
+        _owner.DamageReceiver.ApplyDamage(1);
+        var target = new ChessController();
+        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
+
+        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.False);
+        Assert.That(_movementController.MoveToTarget(target), Is.False);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+    }
+
+    /// <summary>
+    /// 验证棋子统一 Tick 会由 ChessController 同步运行时坐标。
+    /// </summary>
+    [Test]
+    public void ChessTickUpdatesMovementController()
     {
         Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
         _astarAI.FakePosition = new Vector3(6f, 3f, 9f);
@@ -64,7 +152,7 @@ public class ChessMovementControllerTests
     }
 
     /// <summary>
-    /// 验证离开移动状态会停止 A* 并清除尚未完成的命令。
+    /// 验证离开移动状态会停止 A* 并清理当前移动命令。
     /// </summary>
     [Test]
     public void LeavingMovementStateStopsAndClearsMovement()
@@ -72,6 +160,8 @@ public class ChessMovementControllerTests
         Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
 
         OtherState otherState = EnterOtherState();
+        _astarAI.FakePosition = new Vector3(6f, 3f, 9f);
+        _owner.Tick();
 
         Assert.That(_owner.Fsm.CurrentState, Is.SameAs(otherState));
         Assert.That(_astarAI.isStopped, Is.True);
@@ -104,6 +194,36 @@ public class ChessMovementControllerTests
         Assert.That(_movementController.MoveToTarget(target), Is.True);
 
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+    }
+
+    /// <summary>
+    /// 验证攻击状态进入时停止并清理已有移动命令。
+    /// </summary>
+    [Test]
+    public void EnteringAttackStateStopsMovement()
+    {
+        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+
+        Assert.That(_owner.Fsm.ChangeState<AttackState>(), Is.True);
+
+        Assert.That(_astarAI.isStopped, Is.True);
+        Assert.That(_movementController.HasDestination, Is.False);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+    }
+
+    /// <summary>
+    /// 验证攻击状态下成功的移动命令会立即切回移动状态并停止攻击前摇。
+    /// </summary>
+    [Test]
+    public void MovementCommandLeavesAttackStateImmediately()
+    {
+        _owner.Fsm.ChangeState<AttackState>();
+
+        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_movementController.HasDestination, Is.True);
+        Assert.That(_astarAI.isStopped, Is.False);
     }
 
     /// <summary>
@@ -267,7 +387,7 @@ public class ChessMovementControllerTests
     }
 
     /// <summary>
-    /// 表示攻击等未来状态，用于验证 MovementState 的进入和退出边界。
+    /// 表示测试专用的非移动状态，用于验证 MovementState 的进入和退出边界。
     /// </summary>
     private sealed class OtherState : StateBase
     {

@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using Chess.FSM.State;
 
 namespace Chess.FSM
 {
@@ -46,4 +47,97 @@ namespace Chess.FSM
 
         public override Type State2Type => typeof(State2);
     }
+
+    /// <summary>
+    /// 棋子 HP 归零时从移动状态切换到死亡状态。
+    /// </summary>
+    public sealed class MovementToDeadTransition : StateTransition<MovementState, DeadState>
+    {
+        /// <summary>
+        /// 创建绑定到指定状态机的死亡转换。
+        /// </summary>
+        public MovementToDeadTransition(FSM fsm) : base(fsm)
+        {
+        }
+
+        /// <summary>
+        /// 当棋子运行时 HP 小于等于零时允许进入死亡状态。
+        /// </summary>
+        public override bool CanTransition()
+        {
+            return _fsm.ChessController.RuntimeData != null
+                   && _fsm.ChessController.RuntimeData.Hp <= 0;
+        }
+    }
+
+    /// <summary>
+    /// 攻击流程开始时从移动状态切换到攻击状态。
+    /// </summary>
+    public sealed class MovementToAttackTransition : StateTransition<MovementState, AttackState>
+    {
+        /// <summary>
+        /// 创建绑定到指定状态机的攻击进入转换。
+        /// </summary>
+        public MovementToAttackTransition(FSM fsm) : base(fsm)
+        {
+        }
+
+        /// <summary>
+        /// 当攻击控制器已进入攻击前摇阶段时允许切换。
+        /// </summary>
+        public override bool CanTransition()
+        {
+            return _fsm.ChessController.AttackController != null
+                   && _fsm.ChessController.RuntimeData != null
+                   && _fsm.ChessController.RuntimeData.Hp > 0
+                   && _fsm.ChessController.AttackController.IsWindingUp;
+        }
+    }
+
+    /// <summary>
+    /// 攻击状态下出现有效移动命令时切换回移动状态。
+    /// </summary>
+    public sealed class AttackToMovementTransition : StateTransition<AttackState, MovementState>
+    {
+        /// <summary>
+        /// 创建绑定到指定状态机的移动退出转换。
+        /// </summary>
+        public AttackToMovementTransition(FSM fsm) : base(fsm)
+        {
+        }
+
+        /// <summary>
+        /// 当移动控制器存在有效移动命令时允许切换。
+        /// </summary>
+        public override bool CanTransition()
+        {
+            return _fsm.ChessController.RuntimeData != null
+                   && _fsm.ChessController.RuntimeData.Hp > 0
+                   && _fsm.ChessController.MovementController != null
+                   && _fsm.ChessController.MovementController.HasDestination;
+        }
+    }
+
+    /// <summary>
+    /// 攻击状态下棋子 HP 归零时切换到死亡状态。
+    /// </summary>
+    public sealed class AttackToDeadTransition : StateTransition<AttackState, DeadState>
+    {
+        /// <summary>
+        /// 创建绑定到指定状态机的攻击死亡转换。
+        /// </summary>
+        public AttackToDeadTransition(FSM fsm) : base(fsm)
+        {
+        }
+
+        /// <summary>
+        /// 当棋子运行时 HP 小于等于零时允许进入死亡状态。
+        /// </summary>
+        public override bool CanTransition()
+        {
+            return _fsm.ChessController.RuntimeData != null
+                   && _fsm.ChessController.RuntimeData.Hp <= 0;
+        }
+    }
+
 }

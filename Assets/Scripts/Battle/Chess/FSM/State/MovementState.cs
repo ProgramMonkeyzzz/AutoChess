@@ -1,7 +1,7 @@
 namespace Chess.FSM.State
 {
     /// <summary>
-    /// 棋子的默认状态，统一承载静止待机和移动控制。
+    /// 棋子的默认状态，仅作为 FSM 的初始状态，不直接驱动移动控制器。
     /// </summary>
     public class MovementState : StateBase
     {
@@ -13,16 +13,7 @@ namespace Chess.FSM.State
         }
 
         /// <summary>
-        /// 在移动状态内逐帧刷新追踪目标和运行时位置。
-        /// </summary>
-        public override void OnStateStay()
-        {
-            // 棋子可先创建状态机、再绑定场景中的 A* 移动组件。
-            _fsm.ChessController.MovementController?.Tick();
-        }
-
-        /// <summary>
-        /// 离开移动状态时停止 A*，避免攻击等后续状态仍受旧路径驱动。
+        /// 离开移动状态时停止并清理当前移动命令。
         /// </summary>
         public override void OnStateExit()
         {

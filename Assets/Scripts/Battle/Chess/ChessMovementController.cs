@@ -1,5 +1,6 @@
 using System;
 using AutoChess;
+using Chess.FSM.State;
 using Config;
 using Pathfinding;
 using Pathfinding.RVO;
@@ -317,6 +318,11 @@ namespace Chess
         {
             if (_chessController.RuntimeData == null || !_movementAvailable
                 || !_chessBoard.ContainsPosition(_chessController.RuntimeData.CurrentPosition))
+            {
+                return false;
+            }
+
+            if (_chessController.Fsm.CurrentState is DeadState)
             {
                 return false;
             }

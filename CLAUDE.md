@@ -1,6 +1,6 @@
 ## Project Overview
 
-这是一个基于 Unity 2022.3.62f2c1 的自走棋（AutoChess）游戏项目。集成了 A* 寻路系统和 UniTask 异步任务库。请使用全中文与我沟通；代码、路径、命令和标识符可保留原文。修改或新增的代码内容需要添加注释。
+这是一个基于 Unity 2022.3.62f2c1 的自走棋（AutoChess）游戏项目。集成了 A* 寻路系统和 UniTask 异步任务库。请使用全中文与我沟通；代码、路径、命令和标识符可保留原文。修改或新增的方法和字段需要添加注释。
 
 ## Architecture
 
@@ -19,16 +19,23 @@
 - **ChessController**: 棋子控制器，持有棋子的完整状态
   - 包含 `ChessBaseData`（静态配置）和 `ChessRuntimeData`（运行时数据）
   - 持有 `ChessTargetSelector` 用于目标选择
-  - 构造时创建并启动 `Chess.FSM.FSM`，默认状态为 `MovementState`
-  - 战斗循环通过 `ChessController.Tick()` 统一驱动当前状态
+  - 持有 `ChessDamageReceiver`，通过 `DamageReceiver` 接收伤害并触发死亡状态检查
+  - 持有 `AttackController`，通过 `AttackController.Tick()` 统一驱动攻击冷却、前摇和命中
+  - 构造时创建并启动 `Chess.FSM.FSM`，注册 `MovementState`、`AttackState`、`DeadState` 及相关状态转换，默认状态为 `MovementState`
+  - 战斗循环通过 `ChessController.Tick()` 统一驱动当前状态、移动和攻击
 - **ChessBaseData**: 棋子的静态配置数据（从 ScriptableObject 导出）
   - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`HitApplySpeed`
   - `ChessBaseDataSo` 与 `ChessBaseData` 的字段必须保持一一对应，修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
 - **ChessMovementController**: 单个棋子的 A* 移动控制器
   - 通过注入 `IAstarAI` 控制固定 XZ 坐标移动或追踪另一个棋子
-  - `MovementState` 每帧调用其 `Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
+  - `ChessController` 每帧调用 `ChessMovementController.Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
   - 棋子预制体需要配置 `RVOController`，半径固定为 `0.5f`
+- **AttackController**: 单个棋子的自动攻击控制器
+  - 仅攻击 `TargetSelector.SelectedChessController` 中仍存活且处于 `BaseData.Range` 内的目标
+  - `AtkSpeed` 表示每秒攻击次数，命中后的攻击间隔为 `1 / AtkSpeed`
+  - 命中前必须完成 `WindUpTime` 前摇；前摇结束会再次校验目标，失效时取消本次攻击
+  - `AtkSpeed <= 0` 或任一 `AtkSpeed`、`Range`、`WindUpTime` 为负值时不攻击
 
 ### Chess FSM
 
@@ -37,7 +44,11 @@
 - **FSM**: 绑定到一个 `ChessController`，按状态类型注册状态，按源状态类型注册转换
 - **StateBase**: 状态基类，生命周期为 `OnStateEnter` / `OnStateStay` / `OnStateExit`
 - **StateTransition** / **StateTransition<State1, State2>**: 从 `State1` 转到 `State2`，由 `CanTransition()` 决定是否触发
-- **MovementState**: 所有棋子的默认状态，同时承载静止待机和移动控制；退出时停止并清除移动命令
+- **MovementState**: 所有棋子的默认 FSM 初始状态，退出时停止并清理移动控制器
+- **AttackState**: 攻击状态，进入时停止移动，退出时取消攻击前摇并保留已有攻击冷却
+- **DeadState**: 棋子 HP 归零后的终止状态，进入时停止并清理移动命令，不注册返回 `MovementState` 的转换
+- **MovementToDeadTransition**: 当棋子运行时 HP 小于等于零时允许从 `MovementState` 切换到 `DeadState`
+- **MovementToAttackTransition** / **AttackToMovementTransition** / **AttackToDeadTransition**: 管理攻击开始、移动中断和死亡条件下的状态切换
 
 使用约定：
 
@@ -47,7 +58,7 @@
 4. 每帧调用 `Tick()`：先按注册顺序检查当前状态的转换（第一个满足条件的生效），再对切换后的当前状态调用 `OnStateStay`
 5. `ChangeState<TState>()` 可显式切状态；切到当前状态时返回 `false` 且不重入生命周期
 
-当前仓库已实现正式的默认 `MovementState`，尚未实现 Attack/Dead 等其他正式战斗状态。
+当前仓库已实现正式的 `MovementState`、`AttackState` 和 `DeadState`，攻击计时由 `AttackController` 负责。
 
 ### Config Pipeline
 
@@ -86,7 +97,8 @@
 - 当前测试位于 `Assets/Tests/Editor/`，均为 EditMode 测试；目前没有 PlayMode 测试。
   - `ConfigBinaryExporterTests` 覆盖配置的递归导出、字段序列化和重复导出覆盖行为
   - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先生效，以及重复/跨实例注册校验
-  - `ChessMovementControllerTests` 覆盖移动命令、默认 `MovementState`、统一 Tick、状态退出清理和成功移动命令回切行为
+  - `ChessMovementControllerTests` 覆盖移动命令、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
+  - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、攻击冷却、跨阶段时间步、目标失效取消及缴械配置
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -144,6 +156,12 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
 - `Tick()` 在 Stay 之前先处理转换，因此转换成功后 `OnStateStay` 会落在新状态上
 - `ChessController` 创建后 FSM 已处于 `MovementState`；战斗循环应调用 `ChessController.Tick()`，不要再单独驱动 `ChessMovementController.Tick()`
-- 离开 `MovementState` 会停止并清除当前移动命令；成功的新移动命令会自动切回该状态
-- `ChessMovementController` 的坐标使用 XZ 平面，`MovementState` 负责每帧同步 `CurrentPosition`
+- 移动命令由 `ChessController.Tick()` 持续驱动，不因切换到普通状态自动停止；进入 `DeadState` 时会显式停止，成功的新移动命令会自动切回 `MovementState`
+- `ChessMovementController` 的坐标使用 XZ 平面，`ChessController` 负责每帧同步 `CurrentPosition`
+- 通过 `ChessController.DamageReceiver.ApplyDamage()` 结算伤害后会立即检查 HP；HP 小于等于零时切换到 `DeadState`
+- 进入 `DeadState` 会停止并清除移动命令，死亡棋子拒绝新的移动命令，且不注册 `DeadState` 到 `MovementState` 的反向转换
+- `ChessController.Tick()` 会按 FSM、移动、攻击顺序更新；也可调用 `Tick(float deltaTime)` 精确推进攻击时间
+- 攻击伤害取攻击方 `ChessBaseData.Atk`，首次满足目标和射程条件时立即开始前摇，命中后才开始下一次攻击冷却
+- 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止移动，退出取消前摇并保留冷却
+- 攻击状态下成功移动命令立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
 - 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝
