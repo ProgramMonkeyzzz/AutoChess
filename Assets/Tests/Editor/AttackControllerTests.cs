@@ -1,10 +1,13 @@
 #if UNITY_EDITOR
 using System.Reflection;
+using AutoChess;
+using AutoChess.Bullet;
 using Chess;
 using Chess.FSM.State;
 using Config;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 public class AttackControllerTests
 {
@@ -14,11 +17,18 @@ public class AttackControllerTests
     [SetUp]
     public void SetUp()
     {
+        EventDispatcher.Instance.ClearAll();
         _attacker = new ChessController(CreateConfig(100, 12, 5, 2, 0.5f));
         _target = new ChessController(CreateConfig(100, 1, 5, 1, 0f));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
         _target.RuntimeData.CurrentPosition = new Vector2(3f, 0f);
         SelectTarget(_attacker, _target);
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        EventDispatcher.Instance.ClearAll();
     }
 
     /// <summary>
@@ -157,6 +167,47 @@ public class AttackControllerTests
     }
 
     /// <summary>
+    /// 验证正子弹速度会发送发射事件，并将伤害延迟到子弹命中时。
+    /// </summary>
+    [Test]
+    public void PositiveBulletSpeedSpawnsProjectileAndDelaysDamage()
+    {
+        using (var bulletManager = new BulletManager())
+        {
+            _attacker = new ChessController(CreateConfig(100, 12, 5, 2, 0f, 10f));
+            _attacker.RuntimeData.CurrentPosition = Vector2.zero;
+            SelectTarget(_attacker, _target);
+
+            _attacker.Tick(0f);
+
+            Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+            Assert.That(bulletManager.ActiveBulletCount, Is.EqualTo(1));
+
+            bulletManager.Tick(0.3f);
+
+            Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
+            Assert.That(bulletManager.ActiveBulletCount, Is.EqualTo(0));
+        }
+    }
+
+    /// <summary>
+    /// 验证正子弹速度但没有 BulletManager 监听时报告错误且不造成伤害。
+    /// </summary>
+    [Test]
+    public void MissingBulletManagerLogsErrorAndDropsProjectileDamage()
+    {
+        _attacker = new ChessController(CreateConfig(100, 12, 5, 2, 0f, 10f));
+        _attacker.RuntimeData.CurrentPosition = Vector2.zero;
+        SelectTarget(_attacker, _target);
+        LogAssert.Expect(LogType.Error,
+            "AttackController 未找到监听 BulletSpawnEvent 的 BulletManager，子弹伤害不会结算。");
+
+        _attacker.Tick(0f);
+
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+    }
+
+    /// <summary>
     /// 验证无目标、超出射程、自身目标和死亡目标均不会造成伤害。
     /// </summary>
     [Test]
@@ -214,7 +265,13 @@ public class AttackControllerTests
         Assert.DoesNotThrow(_attacker.Tick);
     }
 
-    private static ChessBaseData CreateConfig(int maxHp, int atk, int range, int atkSpeed, float windUpTime)
+    private static ChessBaseData CreateConfig(
+        int maxHp,
+        int atk,
+        int range,
+        float atkSpeed,
+        float windUpTime,
+        float bulletSpeed = 0f)
     {
         return new ChessBaseData
         {
@@ -222,7 +279,8 @@ public class AttackControllerTests
             Atk = atk,
             Range = range,
             AtkSpeed = atkSpeed,
-            WindUpTime = windUpTime
+            WindUpTime = windUpTime,
+            BulletSpeed = bulletSpeed
         };
     }
 

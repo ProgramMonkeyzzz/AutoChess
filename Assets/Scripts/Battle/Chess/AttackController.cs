@@ -1,4 +1,6 @@
 using System;
+using AutoChess;
+using AutoChess.Bullet;
 using Chess.FSM.State;
 using Config;
 using UnityEngine;
@@ -14,6 +16,8 @@ namespace Chess
         private ChessController _windUpTarget;
         private float _windUpRemaining;
         private float _cooldownRemaining;
+        /// <summary>是否已经报告过缺少子弹管理器监听器。</summary>
+        private bool _reportedMissingBulletManager;
 
         /// <summary>当前是否处于攻击前摇阶段。</summary>
         public bool IsWindingUp => _windUpTarget != null;
@@ -78,7 +82,7 @@ namespace Chess
                         return;
                     }
 
-                    target.DamageReceiver.ApplyDamage(_chessController.RuntimeData.GetCurrentAtk(_chessController.BaseData.Atk));
+                    ApplyHit(target);
                     _cooldownRemaining = GetAttackInterval();
                     continue;
                 }
@@ -166,7 +170,7 @@ namespace Chess
 
             if (_chessController.BaseData.WindUpTime <= 0f)
             {
-                target.DamageReceiver.ApplyDamage(_chessController.RuntimeData.GetCurrentAtk(_chessController.BaseData.Atk));
+                ApplyHit(target);
                 _cooldownRemaining = GetAttackInterval();
                 return true;
             }
@@ -209,6 +213,36 @@ namespace Chess
         private float GetAttackInterval()
         {
             return 1f / _chessController.BaseData.AtkSpeed;
+        }
+
+        /// <summary>
+        /// 根据子弹速度选择发送子弹事件或直接结算即时伤害。
+        /// </summary>
+        private void ApplyHit(ChessController target)
+        {
+            if (_chessController.BaseData.BulletSpeed > 0f)
+            {
+                if (EventDispatcher.Instance.GetListenerCount<BulletSpawnEvent>() <= 0)
+                {
+                    if (!_reportedMissingBulletManager)
+                    {
+                        _reportedMissingBulletManager = true;
+                        Debug.LogError("AttackController 未找到监听 BulletSpawnEvent 的 BulletManager，子弹伤害不会结算。");
+                    }
+
+                    return;
+                }
+
+                _reportedMissingBulletManager = false;
+                EventDispatcher.Instance.Send(new BulletSpawnEvent(
+                    _chessController,
+                    target,
+                    _chessController.BaseData.BulletSpeed));
+                return;
+            }
+
+            int damage = _chessController.RuntimeData.GetCurrentAtk(_chessController.BaseData.Atk);
+            target.DamageReceiver.ApplyDamage(damage);
         }
 
         /// <summary>

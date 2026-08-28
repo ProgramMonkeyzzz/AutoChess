@@ -30,9 +30,10 @@ public class ConfigBinaryExporterTests
         source.MaxHp = 500;
         source.Atk = 12;
         source.Range = 3;
-        source.MoveSpeed = 4;
-        source.AtkSpeed = 5;
+        source.MoveSpeed = 4.5f;
+        source.AtkSpeed = 2.5f;
         source.WindUpTime = 0.75f;
+        source.BulletSpeed = 6.5f;
         AssetDatabase.CreateAsset(source, SourceAssetPath);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -60,9 +61,10 @@ public class ConfigBinaryExporterTests
         Assert.That(data.MaxHp, Is.EqualTo(500));
         Assert.That(data.Atk, Is.EqualTo(12));
         Assert.That(data.Range, Is.EqualTo(3));
-        Assert.That(data.MoveSpeed, Is.EqualTo(4));
-        Assert.That(data.AtkSpeed, Is.EqualTo(5));
+        Assert.That(data.MoveSpeed, Is.EqualTo(4.5f));
+        Assert.That(data.AtkSpeed, Is.EqualTo(2.5f));
         Assert.That(data.WindUpTime, Is.EqualTo(0.75f));
+        Assert.That(data.BulletSpeed, Is.EqualTo(6.5f));
     }
 
     [Test]

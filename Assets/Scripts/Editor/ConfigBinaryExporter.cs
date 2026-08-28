@@ -95,6 +95,9 @@ namespace AutoChess.Editor
             return summary;
         }
 
+        /// <summary>
+        /// 将编辑器 ScriptableObject 配置转换为运行时序列化数据。
+        /// </summary>
         internal static ChessBaseData ToRuntimeData(global::Editor.ChessBaseDataSo source)
         {
             return new ChessBaseData
@@ -106,7 +109,8 @@ namespace AutoChess.Editor
                 Range = source.Range,
                 MoveSpeed = source.MoveSpeed,
                 AtkSpeed = source.AtkSpeed,
-                WindUpTime = source.WindUpTime
+                WindUpTime = source.WindUpTime,
+                BulletSpeed = source.BulletSpeed
             };
         }
 

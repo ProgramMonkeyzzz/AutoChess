@@ -20,3 +20,4 @@ MonoBehaviour:
   MoveSpeed: 1
   AtkSpeed: 1
   WindUpTime: 0.2
+  BulletSpeed: 0

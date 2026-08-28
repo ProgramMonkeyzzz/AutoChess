@@ -8,6 +8,8 @@
 
 - **GameManager**: 全局单例管理器，负责协调各个子系统
 - **BattleManager**: 战斗系统的核心管理器，处理战斗流程
+  - 构造时初始化 `CampManager`、`ChessBoard` 和 `BulletManager`
+  - 通过 `Tick()` 统一驱动活动子弹，通过 `Dispose()` 释放事件监听和池对象
 - **CampManager**: 阵营管理系统，维护所有阵营数据
   - 使用 `Dictionary<int, CampGroup>` 存储阵营分组
   - 每个 `CampGroup` 使用 `Dictionary<int, HashSet<ChessController>>` 按棋子ID分组管理棋子实例
@@ -24,7 +26,7 @@
   - 构造时创建并启动 `Chess.FSM.FSM`，注册 `MovementState`、`AttackState`、`DeadState` 及相关状态转换，默认状态为 `MovementState`
   - 战斗循环通过 `ChessController.Tick()` 统一驱动当前状态、移动和攻击
 - **ChessBaseData**: 棋子的静态配置数据（从 ScriptableObject 导出）
-  - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`HitApplySpeed`
+  - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`BulletSpeed`
   - `ChessBaseDataSo` 与 `ChessBaseData` 的字段必须保持一一对应，修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
 - **ChessMovementController**: 单个棋子的 A* 移动控制器
@@ -36,6 +38,17 @@
   - `AtkSpeed` 表示每秒攻击次数，命中后的攻击间隔为 `1 / AtkSpeed`
   - 命中前必须完成 `WindUpTime` 前摇；前摇结束会再次校验目标，失效时取消本次攻击
   - `AtkSpeed <= 0` 或任一 `AtkSpeed`、`Range`、`WindUpTime` 为负值时不攻击
+  - `BulletSpeed > 0` 时发送 `BulletSpawnEvent`，否则直接结算即时伤害
+
+### Bullet System
+
+- **BulletManager**: 监听 `BulletSpawnEvent`，负责子弹注册、逐帧追踪、命中伤害和池化回收
+  - `Tick(float deltaTime)` 使用 `Vector2.MoveTowards` 在棋盘 XZ 平面更新活动子弹
+  - 目标存活时持续追踪最新位置；目标失效后飞向最后有效位置并无伤害回收
+  - 命中时读取攻击者当前攻击力；攻击者死亡不会取消已经发射的子弹
+  - `Dispose()` 反注册事件监听并回收所有活动子弹
+- **BulletRuntimeData**: 实现 `IPool`，由 `ObjectPool` 获取和回收
+- **BulletSpawnEvent**: 攻击控制器与子弹管理器之间的发射事件，携带攻击者、目标和子弹速度
 
 ### Chess FSM
 
@@ -99,6 +112,7 @@
   - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先生效，以及重复/跨实例注册校验
   - `ChessMovementControllerTests` 覆盖移动命令、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、攻击冷却、跨阶段时间步、目标失效取消及缴械配置
+  - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -114,7 +128,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 命令执行后检查退出码、`TestResults.xml` 和 `UnityTest.log`；运行命令行测试前应关闭正在打开同一项目的 Unity 编辑器，避免项目锁冲突。
 - 新增编辑器测试时放入 `Assets/Tests/Editor/`，使用 `[SetUp]`/`[TearDown]` 清理测试创建的资源。涉及 `AssetDatabase` 或配置导出的测试必须使用专用临时目录（例如 `__TestName`），不得修改或删除 `Assets/Configs/` 与 `Assets/Resources/Configs/` 下的正式数据。
 - 修改编辑器工具、配置导出逻辑、序列化数据结构或棋子 FSM 后，至少运行全部 EditMode 测试；若以后新增 PlayMode 测试，则放入 `Assets/Tests/PlayMode/` 并使用 `-testPlatform PlayMode` 单独运行。
-- 测试通过后，根据修改的内容按需更新 AGENTS.md 以及 CLAUDE.md。
+- 测试通过后，根据修改的内容按需更新 AGENTS.md 以及 CLAUDE.md。更新完毕后检查AGENTS.md 以及 CLAUDE.md的文件大小，若超出32kb，精简其中内容使之小于32kb
 
 ### Generating Configs
 
@@ -150,7 +164,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 ## Common Pitfalls
 
 - 修改 `ChessBaseDataSo` 后忘记重新导出配置会导致运行时数据不一致
-- `ChessBaseDataSo` 与 `ChessBaseData` 字段不同步时，导出/反序列化会丢失或错位数据；新增如 `HitApplySpeed` 的字段时必须同时改两边
+- `ChessBaseDataSo` 与 `ChessBaseData` 字段不同步时，导出/反序列化会丢失或错位数据；`BulletSpeed` 等字段必须同时修改两边并重新导出
 - `BinaryFormatter` 已在 .NET 5+ 中标记为过时，但 Unity 2022 仍然支持
 - 阵营系统使用两层字典结构，操作时注意空引用检查
 - FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
@@ -164,4 +178,6 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 攻击伤害取攻击方 `ChessBaseData.Atk`，首次满足目标和射程条件时立即开始前摇，命中后才开始下一次攻击冷却
 - 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止移动，退出取消前摇并保留冷却
 - 攻击状态下成功移动命令立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
+- `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
+- 子弹命中后必须从活动集合移除并归还 `ObjectPool`，不得重复结算或重复回收
 - 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝
