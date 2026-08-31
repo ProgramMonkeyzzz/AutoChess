@@ -1,8 +1,11 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Runtime.Serialization;
 using System.Threading;
+using AutoChess.Utils;
 using BehaviorTree;
 using Cysharp.Threading.Tasks;
 using NUnit.Framework;
@@ -33,9 +36,13 @@ public class BehaviorTreeTests
         var blackboard = new Blackboard();
 
         blackboard.Set("Count", 1);
+        object initialStoredValue = GetBlackboardStoredValue(blackboard, "Count");
         blackboard.Set("Count", 2);
+        object updatedStoredValue = GetBlackboardStoredValue(blackboard, "Count");
 
         Assert.That(blackboard.Contains("Count"), Is.True);
+        Assert.That(initialStoredValue, Is.TypeOf<ValueTypeWrap<int>>());
+        Assert.That(updatedStoredValue, Is.SameAs(initialStoredValue));
         Assert.That(blackboard.TryGet("Count", out int value), Is.True);
         Assert.That(value, Is.EqualTo(2));
         Assert.That(blackboard.Get<int>("Count"), Is.EqualTo(2));
@@ -74,6 +81,72 @@ public class BehaviorTreeTests
 
         Assert.That(blackboard.Contains("Second"), Is.False);
         Assert.That(blackboard.Remove("Second"), Is.False);
+    }
+
+    /// <summary>
+    /// 验证黑板包装普通值类型，同时保持引用类型和可空值类型的原有存储语义。
+    /// </summary>
+    [Test]
+    public void BlackboardWrapsValueTypesAndPreservesReferenceAndNullableValues()
+    {
+        var blackboard = new Blackboard();
+        var referenceValue = new object();
+
+        blackboard.Set("State", BlackboardTestState.Ready);
+        blackboard.Set("Reference", referenceValue);
+        blackboard.Set<int?>("Nullable", 3);
+
+        Assert.That(
+            GetBlackboardStoredValue(blackboard, "State"),
+            Is.TypeOf<ValueTypeWrap<BlackboardTestState>>());
+        Assert.That(GetBlackboardStoredValue(blackboard, "Reference"), Is.SameAs(referenceValue));
+        Assert.That(GetBlackboardStoredValue(blackboard, "Nullable"), Is.TypeOf<int>());
+        Assert.That(blackboard.Get<BlackboardTestState>("State"), Is.EqualTo(BlackboardTestState.Ready));
+        Assert.That(blackboard.Get<int?>("Nullable"), Is.EqualTo(3));
+
+        var updatedReferenceValue = new object();
+        blackboard.Set("Reference", updatedReferenceValue);
+        blackboard.Set<int?>("Nullable", null);
+
+        Assert.That(GetBlackboardStoredValue(blackboard, "Reference"), Is.SameAs(updatedReferenceValue));
+        Assert.That(blackboard.Get<object>("Reference"), Is.SameAs(updatedReferenceValue));
+        Assert.That(GetBlackboardStoredValue(blackboard, "Nullable"), Is.Null);
+        Assert.That(blackboard.TryGet("Nullable", out int? nullableValue), Is.True);
+        Assert.That(nullableValue, Is.Null);
+    }
+
+    /// <summary>
+    /// 验证删除和清空黑板时会重置并回收值类型包装对象。
+    /// </summary>
+    [Test]
+    public void BlackboardRemoveAndClearRecycleValueTypeWraps()
+    {
+        var blackboard = new Blackboard();
+        blackboard.Set("Removed", new RemovedBlackboardValue(7));
+        var removedWrap =
+            (ValueTypeWrap<RemovedBlackboardValue>)GetBlackboardStoredValue(blackboard, "Removed");
+
+        Assert.That(blackboard.Remove("Removed"), Is.True);
+        Assert.That(removedWrap.Value.Number, Is.Zero);
+
+        ValueTypeWrap<RemovedBlackboardValue> recycledRemovedWrap =
+            ObjectPool.Fetch<ValueTypeWrap<RemovedBlackboardValue>>();
+        Assert.That(recycledRemovedWrap, Is.SameAs(removedWrap));
+        recycledRemovedWrap.Dispose();
+
+        blackboard.Set("Cleared", new ClearedBlackboardValue(9));
+        var clearedWrap =
+            (ValueTypeWrap<ClearedBlackboardValue>)GetBlackboardStoredValue(blackboard, "Cleared");
+
+        blackboard.Clear();
+
+        Assert.That(clearedWrap.Value.Number, Is.Zero);
+        Assert.That(blackboard.Contains("Cleared"), Is.False);
+
+        ValueTypeWrap<ClearedBlackboardValue> recycledClearedWrap =
+            ObjectPool.Fetch<ValueTypeWrap<ClearedBlackboardValue>>();
+        Assert.That(recycledClearedWrap, Is.SameAs(clearedWrap));
+        recycledClearedWrap.Dispose();
     }
 
     /// <summary>
@@ -548,6 +621,71 @@ public class BehaviorTreeTests
         Assert.That(actionToken.IsCancellationRequested, Is.True);
         Assert.That(createdAction.Status, Is.EqualTo(NodeStatus.Idle));
         Assert.That(createdAction.StopCount, Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// 读取黑板私有条目当前保存的实际对象，用于验证值类型包装行为。
+    /// </summary>
+    private static object GetBlackboardStoredValue(Blackboard blackboard, string key)
+    {
+        FieldInfo entriesField = typeof(Blackboard).GetField(
+            "_entries",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(entriesField, Is.Not.Null);
+
+        var entries = (IDictionary)entriesField.GetValue(blackboard);
+        object entry = entries[key];
+        Assert.That(entry, Is.Not.Null);
+
+        PropertyInfo valueProperty = entry.GetType().GetProperty("Value");
+        Assert.That(valueProperty, Is.Not.Null);
+        return valueProperty.GetValue(entry);
+    }
+
+    /// <summary>
+    /// 用于验证枚举值会被值类型包装对象承载。
+    /// </summary>
+    private enum BlackboardTestState
+    {
+        /// <summary>默认状态。</summary>
+        None,
+
+        /// <summary>就绪状态。</summary>
+        Ready
+    }
+
+    /// <summary>
+    /// 用于验证 Remove 回收行为的独立值类型。
+    /// </summary>
+    private readonly struct RemovedBlackboardValue
+    {
+        /// <summary>
+        /// 创建具有指定数值的测试数据。
+        /// </summary>
+        public RemovedBlackboardValue(int number)
+        {
+            Number = number;
+        }
+
+        /// <summary>测试数据保存的数值。</summary>
+        public int Number { get; }
+    }
+
+    /// <summary>
+    /// 用于验证 Clear 回收行为的独立值类型。
+    /// </summary>
+    private readonly struct ClearedBlackboardValue
+    {
+        /// <summary>
+        /// 创建具有指定数值的测试数据。
+        /// </summary>
+        public ClearedBlackboardValue(int number)
+        {
+            Number = number;
+        }
+
+        /// <summary>测试数据保存的数值。</summary>
+        public int Number { get; }
     }
 
     /// <summary>

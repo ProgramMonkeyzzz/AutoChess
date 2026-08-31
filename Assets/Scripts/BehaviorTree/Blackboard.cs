@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using AutoChess.Utils;
 
 namespace BehaviorTree
 {
@@ -9,9 +10,9 @@ namespace BehaviorTree
     public sealed class Blackboard
     {
         /// <summary>
-        /// 保存单个黑板变量的声明类型和值。
+        /// 直接保存在字典槽位中的黑板变量声明类型和值。
         /// </summary>
-        private sealed class Entry
+        private readonly struct Entry
         {
             /// <summary>
             /// 创建具有固定声明类型的黑板变量条目。
@@ -26,7 +27,7 @@ namespace BehaviorTree
             public Type ValueType { get; }
 
             /// <summary>黑板变量当前保存的值。</summary>
-            public object Value { get; set; }
+            public object Value { get; }
         }
 
         /// <summary>按 key 保存的全部黑板变量。</summary>
@@ -48,7 +49,23 @@ namespace BehaviorTree
                         $"黑板变量 '{key}' 已使用类型 {entry.ValueType.FullName}，不能写入类型 {valueType.FullName}。 ");
                 }
 
-                entry.Value = value;
+                if (ShouldWrapValueType(valueType))
+                {
+                    ((IValue<T>)entry.Value).Value = value;
+                }
+                else
+                {
+                    _entries[key] = new Entry(valueType, value);
+                }
+
+                return;
+            }
+
+            if (ShouldWrapValueType(valueType))
+            {
+                IValue<T> wrappedValue = FetchValueTypeWrap<T>();
+                wrappedValue.Value = value;
+                _entries.Add(key, new Entry(valueType, wrappedValue));
                 return;
             }
 
@@ -72,6 +89,12 @@ namespace BehaviorTree
             {
                 value = default(T);
                 return false;
+            }
+
+            if (ShouldWrapValueType(entry.ValueType))
+            {
+                value = ((IValue<T>)entry.Value).Value;
+                return true;
             }
 
             if (entry.Value == null)
@@ -102,6 +125,11 @@ namespace BehaviorTree
                     $"黑板变量 '{key}' 的类型为 {entry.ValueType.FullName}，不能读取为 {typeof(T).FullName}。 ");
             }
 
+            if (ShouldWrapValueType(entry.ValueType))
+            {
+                return ((IValue<T>)entry.Value).Value;
+            }
+
             if (entry.Value == null)
             {
                 return default(T);
@@ -125,7 +153,15 @@ namespace BehaviorTree
         public bool Remove(string key)
         {
             ValidateKey(key);
-            return _entries.Remove(key);
+
+            if (!_entries.TryGetValue(key, out Entry entry))
+            {
+                return false;
+            }
+
+            _entries.Remove(key);
+            RecycleValueTypeEntry(entry);
+            return true;
         }
 
         /// <summary>
@@ -133,7 +169,51 @@ namespace BehaviorTree
         /// </summary>
         public void Clear()
         {
+            foreach (Entry entry in _entries.Values)
+            {
+                RecycleValueTypeEntry(entry);
+            }
+
             _entries.Clear();
+        }
+
+        /// <summary>
+        /// 判断指定类型是否使用非可空值类型包装。
+        /// </summary>
+        private static bool ShouldWrapValueType(Type valueType)
+        {
+            return valueType.IsValueType && Nullable.GetUnderlyingType(valueType) == null;
+        }
+
+        /// <summary>
+        /// 从对象池获取当前泛型值类型对应的包装对象。
+        /// </summary>
+        private static IValue<T> FetchValueTypeWrap<T>()
+        {
+            return (IValue<T>)ObjectPool.Fetch(ValueTypeWrapTypeCache<T>.WrappedType);
+        }
+
+        /// <summary>
+        /// 将值类型条目中的池化包装对象重置并归还对象池。
+        /// </summary>
+        private static void RecycleValueTypeEntry(Entry entry)
+        {
+            if (!ShouldWrapValueType(entry.ValueType) || entry.Value == null)
+            {
+                return;
+            }
+
+            ((IPool)entry.Value).Dispose();
+        }
+
+        /// <summary>
+        /// 缓存无约束泛型方法所需的闭合 ValueTypeWrap 类型。
+        /// </summary>
+        private static class ValueTypeWrapTypeCache<T>
+        {
+            /// <summary>当前泛型参数对应的闭合包装类型。</summary>
+            public static readonly Type WrappedType =
+                typeof(ValueTypeWrap<>).MakeGenericType(typeof(T));
         }
 
         /// <summary>

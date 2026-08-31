@@ -81,7 +81,7 @@
 - `BehaviorTreeRunner` 管理 `Start`、`Tick`、`Stop` 和 `Reset`；树到达 `Success` 或 `Failure` 后保持终态，重新执行前必须 `Reset` 并再次 `Start`
 - `SequenceNode`、`SelectorNode` 按顺序驱动子节点，`ParallelNode` 可分别配置 All/Any 成功和失败策略，失败判定优先
 - `ActionNode` 返回 `Running`、`Success` 或 `Failure`；异步 Action 继承 `AsyncActionNode` 并使用 `UniTask<ActionResult>`，不得使用 `Task`
-- `Blackboard` 使用固定 key 和首次写入的泛型类型传递运行时数据；黑板、注册表和节点状态不参与行为树定义序列化
+- `Blackboard` 使用固定 key 和首次写入的泛型类型传递运行时数据；普通非可空值类型使用池化 `ValueTypeWrap<T>` 保存并在 `Remove`/`Clear` 时回收，`Nullable<T>` 保持原有语义；黑板、注册表和节点状态不参与行为树定义序列化
 - `BehaviorTreeBinarySerializer` 仅用于可信本地数据，使用 `BinaryFormatter` 序列化带版本号的行为树定义
 
 ### Behavior Tree Unity Editor
@@ -207,6 +207,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
 - 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝
 - 行为树定义只能保存数据，不得保存委托、运行时节点、黑板或 Unity 场景对象；自定义叶节点必须通过稳定 `LogicId` 注册
+- Blackboard 值类型条目由 `ValueTypeWrap<T>` 承载，删除或清空时必须让包装对象重置并归还 `ObjectPool`；`Nullable<T>` 不满足包装类的非可空 `struct` 约束，沿用 object 存储
 - `ParallelNode` 达到终态时会中止仍在 Running 的子节点；异步节点必须响应运行器传入的取消令牌
 - 行为树异步逻辑统一使用 `UniTask`，禁止引入 `System.Threading.Tasks.Task`
 - 行为树二进制反序列化仅允许读取可信本地配置，不得处理网络或用户提供的不可信数据
