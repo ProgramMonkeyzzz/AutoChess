@@ -84,6 +84,13 @@
 - `Blackboard` 使用固定 key 和首次写入的泛型类型传递运行时数据；黑板、注册表和节点状态不参与行为树定义序列化
 - `BehaviorTreeBinarySerializer` 仅用于可信本地数据，使用 `BinaryFormatter` 序列化带版本号的行为树定义
 
+### Behavior Tree Unity Editor
+
+- `Assets/Scripts/Editor/BehaviorTreeGraphAsset.cs` 提供基于 NodeCanvas `GraphEditor` 的行为树编辑源资产，创建菜单为 `Tools > AutoChess > Behavior Tree > Create Asset`
+- 编辑器图只用于可视化和编辑，不使用 NodeCanvas 自带行为树运行时；通过 `Validate`、`Export Bytes` 和 `Export Bytes As...` 导出本项目 `BehaviorTreeDefinition`
+- 源资产默认保存在 `Assets/Configs/BehaviorTrees/`，bytes 默认保存在 `Assets/Resources/Configs/BehaviorTrees/`
+- Action/Conditional 的 LogicId 和参数元数据通过 `BehaviorTreeLogicCatalog` 注册；编辑器参数当前支持 `string`、`int`、`float` 和 `bool`
+
 ### Config Pipeline
 
 配置数据使用两阶段流程：
@@ -126,6 +133,7 @@
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、攻击冷却、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
+  - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog 和 bytes 导出往返
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -194,6 +202,9 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 攻击状态下成功移动命令立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
 - `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
 - 子弹命中后必须从活动集合移除并归还 `ObjectPool`，不得重复结算或重复回收
+- 行为树编辑源资产只在 Unity Editor 中使用，修改图后必须显式执行 `Export Bytes` 才会更新运行时 `.bytes`
+- NodeCanvas 原生 `BehaviourTree` 资产与本项目 `BehaviorTreeGraphAsset` 不兼容，不要混用两套运行时
+- 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
 - 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝
 - 行为树定义只能保存数据，不得保存委托、运行时节点、黑板或 Unity 场景对象；自定义叶节点必须通过稳定 `LogicId` 注册
 - `ParallelNode` 达到终态时会中止仍在 Running 的子节点；异步节点必须响应运行器传入的取消令牌
