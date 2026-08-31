@@ -113,7 +113,7 @@ namespace Chess
         /// </summary>
         public void Tick(float deltaTime)
         {
-            _fsm.Tick();
+            _fsm.Tick(deltaTime);
             _movementController?.Tick();
             _attackController?.Tick(deltaTime);
         }

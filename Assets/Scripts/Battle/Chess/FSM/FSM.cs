@@ -124,9 +124,18 @@ namespace Chess.FSM
         }
 
         /// <summary>
-        /// 检查当前状态的转换，并执行当前状态的停留逻辑。
+        /// 使用零时间步检查当前状态的转换，并执行当前状态的停留逻辑。
         /// </summary>
         public void Tick()
+        {
+            Tick(0f);
+        }
+
+        /// <summary>
+        /// 使用指定时间步检查当前状态的转换，并执行当前状态的停留逻辑。
+        /// </summary>
+        /// <param name="deltaTime">传递给当前状态及其停留行为树的时间步长。</param>
+        public void Tick(float deltaTime)
         {
             if (!_isStarted || _currentState == null)
             {
@@ -145,7 +154,7 @@ namespace Chess.FSM
                 }
             }
 
-            _currentState.OnStateStay();
+            _currentState.OnStateStay(deltaTime);
         }
 
         private StateBase GetRegisteredState(Type stateType)

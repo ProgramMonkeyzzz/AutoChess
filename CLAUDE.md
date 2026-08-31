@@ -55,7 +55,10 @@
 棋子状态机位于 `Assets/Scripts/Battle/Chess/FSM/`，命名空间为 `Chess.FSM`：
 
 - **FSM**: 绑定到一个 `ChessController`，按状态类型注册状态，按源状态类型注册转换
-- **StateBase**: 状态基类，生命周期为 `OnStateEnter` / `OnStateStay` / `OnStateExit`
+- **StateBase**: 状态基类，保存可选的 Enter、Stay、Exit 三个 `BehaviorTreeRunner`
+  - `OnStateEnter` / `OnStateStay` / `OnStateExit` 是不可重写的模板方法，派生状态通过对应的 `Core` 方法实现自身逻辑
+  - Enter 树在状态自身进入逻辑后执行一次，Stay 树在状态自身停留逻辑后使用当前 `deltaTime` 持续推进，Exit 树在状态自身退出清理前执行一次
+  - 状态退出时停止全部行为树并取消异步节点，重新进入时重置三棵树
 - **StateTransition** / **StateTransition<State1, State2>**: 从 `State1` 转到 `State2`，由 `CanTransition()` 决定是否触发
 - **MovementState**: 所有棋子的默认 FSM 初始状态，退出时停止并清理移动控制器
 - **AttackState**: 攻击状态，进入时停止移动，退出时取消攻击前摇并保留已有攻击冷却
@@ -70,6 +73,7 @@
 3. `Start<TState>()` 进入初始状态；重复启动会抛异常
 4. 每帧调用 `Tick()`：先按注册顺序检查当前状态的转换（第一个满足条件的生效），再对切换后的当前状态调用 `OnStateStay`
 5. `ChangeState<TState>()` 可显式切状态；切到当前状态时返回 `false` 且不重入生命周期
+6. `Tick(float deltaTime)` 将时间步传给当前状态的 Stay 行为树；无参 `Tick()` 使用零时间步
 
 当前仓库已实现正式的 `MovementState`、`AttackState` 和 `DeadState`，攻击计时由 `AttackController` 负责。
 
@@ -128,7 +132,7 @@
 - 项目通过 `com.unity.feature.development` 集成 Unity Test Framework，测试使用 NUnit API。
 - 当前测试位于 `Assets/Tests/Editor/`，均为 EditMode 测试；目前没有 PlayMode 测试。
   - `ConfigBinaryExporterTests` 覆盖配置的递归导出、字段序列化和重复导出覆盖行为
-  - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先生效，以及重复/跨实例注册校验
+  - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先、重复/跨实例注册校验，以及状态行为树的阶段顺序、时间步、重入和取消
   - `ChessMovementControllerTests` 覆盖移动命令、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、攻击冷却、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
@@ -191,6 +195,8 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 阵营系统使用两层字典结构，操作时注意空引用检查
 - FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
 - `Tick()` 在 Stay 之前先处理转换，因此转换成功后 `OnStateStay` 会落在新状态上
+- 状态子类不得绕过 `StateBase` 的生命周期模板，应重写 `OnStateEnterCore`、`OnStateStayCore` 或 `OnStateExitCore`
+- Enter/Exit 行为树各只 Tick 一次；若返回 Running，Enter 树在离开状态时取消，Exit 树在退出回调结束时立即取消
 - `ChessController` 创建后 FSM 已处于 `MovementState`；战斗循环应调用 `ChessController.Tick()`，不要再单独驱动 `ChessMovementController.Tick()`
 - 移动命令由 `ChessController.Tick()` 持续驱动，不因切换到普通状态自动停止；进入 `DeadState` 时会显式停止，成功的新移动命令会自动切回 `MovementState`
 - `ChessMovementController` 的坐标使用 XZ 平面，`ChessController` 负责每帧同步 `CurrentPosition`
