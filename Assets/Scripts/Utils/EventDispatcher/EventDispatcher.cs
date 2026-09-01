@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AutoChess.Utils;
-using UnityEngine;
 
 namespace AutoChess
 {
@@ -91,7 +90,8 @@ namespace AutoChess
                     catch (Exception ex)
                     {
                         // 处理回调中的异常，避免影响其他监听器
-                        Debug.LogError($"[EventDispatcher] Error broadcasting event {eventType}: {ex}");
+                        ThreadLogQueue.Enqueue(ThreadLogLevel.Error,
+                            $"[EventDispatcher] Error broadcasting event {eventType}: {ex}");
                         // 可以根据需要选择是否重新抛出或记录日志
                     }
                 }

@@ -1,10 +1,10 @@
+using System;
 using AutoChess;
+using AutoChess.Navigation;
 using Camp;
 using Chess.FSM;
 using Chess.FSM.State;
 using Config;
-using Pathfinding;
-using UnityEngine;
 
 namespace Chess
 {
@@ -92,20 +92,54 @@ namespace Chess
         }
 
         /// <summary>
-        /// 绑定该棋子的 A* 移动组件。
+        /// 绑定该棋子的 RVO 导航代理。
         /// </summary>
-        public ChessMovementController InitializeMovement(ChessBoard chessBoard, IAstarAI astarAI)
+        public ChessMovementController InitializeMovement(ChessBoard chessBoard, NavigationAgentHandle agent)
         {
-            _movementController = new ChessMovementController(this, chessBoard, astarAI);
+            _movementController = new ChessMovementController(this, chessBoard, agent);
             return _movementController;
+        }
+
+        /// <summary>
+        /// 设置棋子的阵营上下文，供 CampManager 在注册时调用。
+        /// </summary>
+        internal void SetCampContext(int camp, int chessId, CampGroup campGroup)
+        {
+            _camp = camp;
+            _chessId = chessId;
+            _campGroup = campGroup;
+        }
+
+        /// <summary>
+        /// 获取棋子配置 ID，供阵营和导航排序使用。
+        /// </summary>
+        internal int ChessId => _chessId;
+
+        /// <summary>
+        /// 生成当前棋子的导航输入，供 BattleManager 发布给主线程。
+        /// </summary>
+        internal NavigationInputSnapshot BuildNavigationInput(long stepId)
+        {
+            return _movementController == null
+                ? default
+                : _movementController.BuildNavigationInput(stepId);
+        }
+
+        /// <summary>
+        /// 应用主线程 RVO 计算结果，供 BattleManager 更新运行时位置。
+        /// </summary>
+        internal bool ApplyNavigationResult(NavigationResultSnapshot result)
+        {
+            return _movementController != null && _movementController.ApplyNavigationResult(result);
         }
 
         /// <summary>
         /// 每帧按 FSM、移动、攻击顺序驱动棋子战斗逻辑。
         /// </summary>
+        [Obsolete("战斗逻辑必须由 BattleManager 传入固定时间步。")]
         public void Tick()
         {
-            Tick(Time.deltaTime);
+            Tick(1f / 60f);
         }
 
         /// <summary>

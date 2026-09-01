@@ -2,6 +2,7 @@
 using System.Reflection;
 using AutoChess;
 using AutoChess.Bullet;
+using AutoChess.Utils;
 using Chess;
 using Chess.FSM.State;
 using Config;
@@ -18,6 +19,10 @@ public class AttackControllerTests
     public void SetUp()
     {
         EventDispatcher.Instance.ClearAll();
+        while (ThreadLogQueue.TryDequeue(out _))
+        {
+        }
+
         _attacker = new ChessController(CreateConfig(100, 12, 5, 2, 0.5f));
         _target = new ChessController(CreateConfig(100, 1, 5, 1, 0f));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
@@ -276,12 +281,14 @@ public class AttackControllerTests
         _attacker = new ChessController(CreateConfig(100, 12, 5, 2, 0f, 10f));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
         SelectTarget(_attacker, _target);
-        LogAssert.Expect(LogType.Error,
-            "AttackController 未找到监听 BulletSpawnEvent 的 BulletManager，子弹伤害不会结算。");
 
         _attacker.Tick(0f);
 
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(ThreadLogQueue.TryDequeue(out ThreadLogRecord record), Is.True);
+        Assert.That(record.Level, Is.EqualTo(ThreadLogLevel.Error));
+        Assert.That(record.Message, Is.EqualTo(
+            "AttackController 未找到监听 BulletSpawnEvent 的 BulletManager，子弹伤害不会结算。"));
     }
 
     /// <summary>

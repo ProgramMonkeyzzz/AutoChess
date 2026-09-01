@@ -1,46 +1,49 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
 using AutoChess;
+using AutoChess.Navigation;
 using Chess;
-using Chess.FSM;
 using Chess.FSM.State;
+using Config;
 using NUnit.Framework;
-using Pathfinding;
-using Pathfinding.Util;
 using UnityEngine;
-using UnityEngine.TestTools;
 
+/// <summary>覆盖无障碍棋盘上的 RVO 移动命令和快照交换语义。</summary>
 public class ChessMovementControllerTests
 {
     private ChessBoard _board;
-    private FakeAstarAI _astarAI;
+    private NavigationManager _navigation;
     private ChessController _owner;
-    private ChessMovementController _movementController;
+    private NavigationAgentHandle _agent;
+    private ChessMovementController _movement;
 
     [SetUp]
     public void SetUp()
     {
         _board = new ChessBoard { Width = 20, Height = 20 };
-        _astarAI = new FakeAstarAI { FakePosition = new Vector3(2f, 3f, 4f) };
-        _owner = new ChessController();
-        _owner.RuntimeData.Hp = 100;
-        // 通过棋子入口绑定移动控制器，确保状态能够驱动同一个实例。
-        _movementController = _owner.InitializeMovement(_board, _astarAI);
+        _navigation = new NavigationManager(_board);
+        _owner = new ChessController(CreateConfig(100, 2f));
+        _owner.RuntimeData.CurrentPosition = new Vector2(2f, 4f);
+        _agent = _navigation.RegisterAgent(_owner.RuntimeData.CurrentPosition, ChessMovementController.ChessRadius, 2f);
+        _movement = _owner.InitializeMovement(_board, _agent);
     }
 
-    /// <summary>
-    /// 验证所有棋子创建后都立即启动默认移动状态。
-    /// </summary>
-    [Test]
-    public void NewChessStartsInMovementState()
+    [TearDown]
+    public void TearDown()
     {
-        Assert.That(_owner.Fsm.IsStarted, Is.True);
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        _navigation.Dispose();
     }
 
-    /// <summary>
-    /// 验证棋子创建后已注册死亡状态并绑定伤害接收器。
-    /// </summary>
+    /// <summary>验证棋子默认进入移动状态并成功绑定 RVO 代理。</summary>
+    [Test]
+    public void NewChessStartsInMovementStateAndHasAgent()
+    {
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_agent.IsValid, Is.True);
+        Assert.That(_movement.Agent, Is.EqualTo(_agent));
+    }
+
+    /// <summary>验证棋子创建后已注册死亡状态并绑定伤害接收器。</summary>
     [Test]
     public void NewChessRegistersDeadStateAndDamageReceiver()
     {
@@ -49,436 +52,149 @@ public class ChessMovementControllerTests
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
     }
 
-    /// <summary>
-    /// 验证已注册的死亡转换会在移动状态 Tick 时响应归零的 HP。
-    /// </summary>
+    /// <summary>验证已注册的死亡转换会在移动状态 Tick 时响应归零的 HP。</summary>
     [Test]
     public void ZeroHpTransitionsToDeadStateOnFsmTick()
     {
         _owner.RuntimeData.Hp = 0;
-
         _owner.Fsm.Tick();
-
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
     }
 
-    /// <summary>
-    /// 验证尚未绑定场景移动组件的棋子也可以安全更新默认状态。
-    /// </summary>
+    /// <summary>验证尚未绑定导航代理的棋子也可以安全更新默认状态。</summary>
     [Test]
     public void TickWithoutMovementControllerDoesNotThrow()
     {
         var chessController = new ChessController();
         chessController.RuntimeData.Hp = 100;
-
-        Assert.DoesNotThrow(chessController.Tick);
+        Assert.DoesNotThrow(() => chessController.Tick(0f));
         Assert.That(chessController.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
-    /// <summary>
-    /// 验证非致命伤害只扣除 HP，不切换棋子状态。
-    /// </summary>
+    /// <summary>验证非致命伤害只扣除 HP，不切换棋子状态。</summary>
     [Test]
     public void NonLethalDamageKeepsMovementState()
     {
         _owner.RuntimeData.Hp = 100;
-
         _owner.DamageReceiver.ApplyDamage(30);
-
         Assert.That(_owner.RuntimeData.Hp, Is.EqualTo(70));
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
-    /// <summary>
-    /// 验证致命伤害会立即切换到死亡状态并停止已有移动。
-    /// </summary>
+    /// <summary>验证致命伤害会立即切换到死亡状态并停止已有移动。</summary>
     [Test]
     public void LethalDamageImmediatelyEntersDeadState()
     {
         _owner.RuntimeData.Hp = 50;
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
         _owner.DamageReceiver.ApplyDamage(50);
-
         Assert.That(_owner.RuntimeData.Hp, Is.EqualTo(0));
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
-        Assert.That(_astarAI.isStopped, Is.True);
-        Assert.That(_movementController.HasDestination, Is.False);
+        Assert.That(_movement.HasDestination, Is.False);
     }
 
-    /// <summary>
-    /// 验证过量伤害会将 HP 限制为零并保持死亡状态。
-    /// </summary>
+    /// <summary>验证固定点命令只更新本地命令并生成纯数据输入。</summary>
     [Test]
-    public void OverkillDamageClampsHpAndKeepsDeadState()
+    public void FixedPositionBuildsNavigationInput()
     {
-        _owner.RuntimeData.Hp = 10;
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
 
-        _owner.DamageReceiver.ApplyDamage(100);
-        _owner.DamageReceiver.ApplyDamage(1);
-
-        Assert.That(_owner.RuntimeData.Hp, Is.EqualTo(0));
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+        NavigationInputSnapshot input = _movement.BuildNavigationInput(1);
+        Assert.That(input.Agent, Is.EqualTo(_agent));
+        Assert.That(input.TargetPoint, Is.EqualTo(new Vector2(7f, 8f)));
+        Assert.That(input.DesiredSpeed, Is.EqualTo(2f));
+        Assert.That(input.Enabled, Is.True);
     }
 
-    /// <summary>
-    /// 验证死亡棋子不能建立新的固定坐标或目标追踪移动命令。
-    /// </summary>
+    /// <summary>验证 RVO 结果会更新运行时位置并支持到达判断。</summary>
     [Test]
-    public void DeadChessRejectsNewMovementCommands()
+    public void NavigationResultUpdatesRuntimePosition()
     {
-        _owner.RuntimeData.Hp = 1;
-        _owner.DamageReceiver.ApplyDamage(1);
-        var target = new ChessController();
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+        NavigationInputSnapshot input = _movement.BuildNavigationInput(1);
+        IReadOnlyList<NavigationResultSnapshot> results = _navigation.Tick(
+            1,
+            new[] { input },
+            0.5f);
+
+        Assert.That(results.Count, Is.EqualTo(1));
+        Assert.That(_movement.ApplyNavigationResult(results[0]), Is.True);
+        Assert.That(_owner.RuntimeData.CurrentPosition, Is.Not.EqualTo(new Vector2(2f, 4f)));
+        Assert.That(_owner.RuntimeData.CurrentPosition.x, Is.InRange(0.5f, 19.5f));
+        Assert.That(_owner.RuntimeData.CurrentPosition.y, Is.InRange(0.5f, 19.5f));
+    }
+
+    /// <summary>验证追踪目标会保持双方半径之和的安全距离。</summary>
+    [Test]
+    public void TargetMovementKeepsSafeDistance()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
         target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
 
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.False);
-        Assert.That(_movementController.MoveToTarget(target), Is.False);
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+        Assert.That(_movement.MoveToTarget(target), Is.True);
+        Assert.That(_movement.Destination.x, Is.EqualTo(11f).Within(0.0001f));
+        Assert.That(_movement.Destination.y, Is.EqualTo(4f).Within(0.0001f));
+        Assert.That(_movement.HasReachedDestination, Is.False);
     }
 
-    /// <summary>
-    /// 验证棋子统一 Tick 会由 ChessController 同步运行时坐标。
-    /// </summary>
+    /// <summary>验证进入攻击或死亡状态时 Stop 会清除移动命令。</summary>
     [Test]
-    public void ChessTickUpdatesMovementController()
+    public void StateExitStopsMovementCommand()
     {
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-        _astarAI.FakePosition = new Vector3(6f, 3f, 9f);
-
-        _owner.Tick();
-
-        Assert.That(_owner.RuntimeData.CurrentPosition, Is.EqualTo(new Vector2(6f, 9f)));
-    }
-
-    /// <summary>
-    /// 验证离开移动状态会停止 A* 并清理当前移动命令。
-    /// </summary>
-    [Test]
-    public void LeavingMovementStateStopsAndClearsMovement()
-    {
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-
-        OtherState otherState = EnterOtherState();
-        _astarAI.FakePosition = new Vector3(6f, 3f, 9f);
-        _owner.Tick();
-
-        Assert.That(_owner.Fsm.CurrentState, Is.SameAs(otherState));
-        Assert.That(_astarAI.isStopped, Is.True);
-        Assert.That(_movementController.HasDestination, Is.False);
-    }
-
-    /// <summary>
-    /// 验证成功的固定坐标命令会让其他状态切回 MovementState。
-    /// </summary>
-    [Test]
-    public void SuccessfulPositionCommandReturnsToMovementState()
-    {
-        EnterOtherState();
-
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
-    }
-
-    /// <summary>
-    /// 验证成功的目标追踪命令会让其他状态切回 MovementState。
-    /// </summary>
-    [Test]
-    public void SuccessfulTargetCommandReturnsToMovementState()
-    {
-        var target = new ChessController();
-        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
-        EnterOtherState();
-
-        Assert.That(_movementController.MoveToTarget(target), Is.True);
-
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
-    }
-
-    /// <summary>
-    /// 验证攻击状态进入时停止并清理已有移动命令。
-    /// </summary>
-    [Test]
-    public void EnteringAttackStateStopsMovement()
-    {
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
         Assert.That(_owner.Fsm.ChangeState<AttackState>(), Is.True);
+        Assert.That(_movement.HasDestination, Is.False);
 
-        Assert.That(_astarAI.isStopped, Is.True);
-        Assert.That(_movementController.HasDestination, Is.False);
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        _owner.Fsm.ChangeState<MovementState>();
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+        _owner.DamageReceiver.ApplyDamage(1000);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+        Assert.That(_movement.HasDestination, Is.False);
     }
 
-    /// <summary>
-    /// 验证攻击状态下成功的移动命令会立即切回移动状态并停止攻击前摇。
-    /// </summary>
+    /// <summary>验证死亡棋子拒绝新的移动命令。</summary>
     [Test]
-    public void MovementCommandLeavesAttackStateImmediately()
+    public void DeadChessRejectsMovement()
     {
-        _owner.Fsm.ChangeState<AttackState>();
+        _owner.DamageReceiver.ApplyDamage(1000);
 
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
-        Assert.That(_movementController.HasDestination, Is.True);
-        Assert.That(_astarAI.isStopped, Is.False);
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.False);
+        Assert.That(_movement.HasDestination, Is.False);
     }
 
-    /// <summary>
-    /// 验证失败的移动命令不会打断棋子的当前状态。
-    /// </summary>
+    /// <summary>验证旧命令结果不能覆盖新命令结果。</summary>
     [Test]
-    public void FailedMovementCommandsKeepCurrentState()
+    public void StaleNavigationResultIsIgnored()
     {
-        OtherState otherState = EnterOtherState();
-        var invalidTarget = new ChessController();
-        invalidTarget.RuntimeData.CurrentPosition = new Vector2(21f, 4f);
+        Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+        NavigationInputSnapshot oldInput = _movement.BuildNavigationInput(1);
+        Assert.That(_movement.MoveToPosition(new Vector2(9f, 9f)), Is.True);
+        NavigationResultSnapshot stale = new NavigationResultSnapshot(
+            1,
+            _agent,
+            new Vector2(7f, 8f),
+            2f,
+            true,
+            false,
+            oldInput.CommandVersion);
 
-        Assert.That(_movementController.MoveToPosition(new Vector2(-1f, 5f)), Is.False);
-        Assert.That(_movementController.MoveToTarget(invalidTarget), Is.False);
-
-        Assert.That(_owner.Fsm.CurrentState, Is.SameAs(otherState));
-    }
-
-    /// <summary>
-    /// 验证 A* 寻路请求抛出异常时不会切换当前状态或保留半完成命令。
-    /// </summary>
-    [Test]
-    public void PathSearchFailureKeepsCurrentState()
-    {
-        OtherState otherState = EnterOtherState();
-        _astarAI.ThrowOnSearchPath = true;
-        LogAssert.Expect(LogType.Error, "棋子 A* 寻路请求失败：测试寻路失败");
-
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.False);
-
-        Assert.That(_owner.Fsm.CurrentState, Is.SameAs(otherState));
-        Assert.That(_movementController.HasDestination, Is.False);
-    }
-
-    /// <summary>
-    /// 验证 Stop 只负责移动清理，不隐式改变 FSM 状态。
-    /// </summary>
-    [Test]
-    public void StopDoesNotChangeCurrentState()
-    {
-        OtherState otherState = EnterOtherState();
-
-        _movementController.Stop();
-
-        Assert.That(_owner.Fsm.CurrentState, Is.SameAs(otherState));
-    }
-
-    [Test]
-    public void FixedPositionUsesXZCoordinatesAndSynchronizesRuntimePosition()
-    {
+        Assert.That(_movement.ApplyNavigationResult(stale), Is.False);
         Assert.That(_owner.RuntimeData.CurrentPosition, Is.EqualTo(new Vector2(2f, 4f)));
-
-        Assert.That(_movementController.MoveToPosition(new Vector2(7.25f, 8.5f)), Is.True);
-
-        Assert.That(_astarAI.destination, Is.EqualTo(new Vector3(7.25f, 3f, 8.5f)));
-        Assert.That(_astarAI.SearchPathCount, Is.EqualTo(1));
-        Assert.That(_movementController.Destination, Is.EqualTo(new Vector2(7.25f, 8.5f)));
-
-        _astarAI.FakePosition = new Vector3(5f, 6f, 7f);
-        _movementController.Tick();
-
-        Assert.That(_owner.RuntimeData.CurrentPosition, Is.EqualTo(new Vector2(5f, 7f)));
     }
 
-    [Test]
-    public void InvalidFixedPositionIsRejected()
+    /// <summary>创建测试用棋子配置。</summary>
+    private static ChessBaseData CreateConfig(int hp, float moveSpeed)
     {
-        Assert.That(_movementController.MoveToPosition(new Vector2(-0.01f, 5f)), Is.False);
-        Assert.That(_movementController.MoveToPosition(new Vector2(float.NaN, 5f)), Is.False);
-        Assert.That(_astarAI.SearchPathCount, Is.EqualTo(0));
-    }
-
-    [Test]
-    public void InvalidTargetStopsAndClearsCommand()
-    {
-        var target = new ChessController();
-        target.RuntimeData.CurrentPosition = new Vector2(21f, 4f);
-
-        Assert.That(_movementController.MoveToTarget(target), Is.False);
-
-        Assert.That(_astarAI.isStopped, Is.True);
-        Assert.That(_movementController.HasDestination, Is.False);
-        Assert.That(_movementController.TargetChess, Is.Null);
-    }
-
-    [Test]
-    public void TargetMovementKeepsSafeDistanceAndRefreshesWhenTargetMoves()
-    {
-        var target = new ChessController();
-        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
-
-        Assert.That(_movementController.MoveToTarget(target), Is.True);
-
-        float initialDistance = Vector2.Distance(
-            new Vector2(_astarAI.destination.x, _astarAI.destination.z),
-            target.RuntimeData.CurrentPosition);
-        Assert.That(initialDistance, Is.EqualTo(ChessMovementController.NoOverlapDistance).Within(0.0001f));
-        Assert.That(_astarAI.SearchPathCount, Is.EqualTo(1));
-
-        target.RuntimeData.CurrentPosition = new Vector2(12f, 10f);
-        _movementController.Tick();
-
-        Assert.That(_astarAI.SearchPathCount, Is.EqualTo(2));
-        float refreshedDistance = Vector2.Distance(
-            new Vector2(_astarAI.destination.x, _astarAI.destination.z),
-            target.RuntimeData.CurrentPosition);
-        Assert.That(refreshedDistance, Is.GreaterThanOrEqualTo(ChessMovementController.NoOverlapDistance));
-        Assert.That(_movementController.TargetChess, Is.SameAs(target));
-    }
-
-    [Test]
-    public void TargetAlreadyWithinSafeDistanceStopsWithoutPathRequest()
-    {
-        var target = new ChessController();
-        target.RuntimeData.CurrentPosition = new Vector2(2.5f, 4f);
-
-        Assert.That(_movementController.MoveToTarget(target), Is.True);
-
-        Assert.That(_astarAI.isStopped, Is.True);
-        Assert.That(_astarAI.SearchPathCount, Is.EqualTo(0));
-        Assert.That(_movementController.HasReachedDestination, Is.True);
-        Assert.That(_movementController.IsMoving, Is.False);
-    }
-
-    [Test]
-    public void StopClearsCommandAndStopsAstar()
-    {
-        Assert.That(_movementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-
-        _movementController.Stop();
-
-        Assert.That(_astarAI.isStopped, Is.True);
-        Assert.That(_movementController.HasDestination, Is.False);
-        Assert.That(_movementController.TargetChess, Is.Null);
-        Assert.That(_movementController.IsMoving, Is.False);
-    }
-
-    [Test]
-    public void NewCommandReplacesPreviousTargetCommand()
-    {
-        var target = new ChessController();
-        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
-        Assert.That(_movementController.MoveToTarget(target), Is.True);
-
-        Assert.That(_movementController.MoveToPosition(new Vector2(9f, 9f)), Is.True);
-
-        Assert.That(_movementController.TargetChess, Is.Null);
-        Assert.That(_movementController.Destination, Is.EqualTo(new Vector2(9f, 9f)));
-        Assert.That(_astarAI.destination, Is.EqualTo(new Vector3(9f, 3f, 9f)));
-    }
-
-    /// <summary>
-    /// 注册并进入一个测试专用的非移动状态。
-    /// </summary>
-    private OtherState EnterOtherState()
-    {
-        var otherState = new OtherState(_owner.Fsm);
-        _owner.Fsm.AddState(otherState);
-        _owner.Fsm.ChangeState<OtherState>();
-        return otherState;
-    }
-
-    /// <summary>
-    /// 表示测试专用的非移动状态，用于验证 MovementState 的进入和退出边界。
-    /// </summary>
-    private sealed class OtherState : StateBase
-    {
-        public OtherState(FSM fsm) : base(fsm)
+        return new ChessBaseData
         {
-        }
-    }
-
-    private sealed class FakeAstarAI : IAstarAI
-    {
-        public Vector3 FakePosition;
-        public int SearchPathCount;
-        public bool ThrowOnSearchPath;
-
-        public float radius { get; set; }
-        public float height { get; set; }
-        public Vector3 position => FakePosition;
-        public Quaternion rotation { get; set; }
-        public float maxSpeed { get; set; }
-        public Vector3 velocity => Vector3.zero;
-        public Vector3 desiredVelocity => Vector3.zero;
-        public Vector3 desiredVelocityWithoutLocalAvoidance { get; set; }
-        public float remainingDistance => 0f;
-        public bool reachedDestination { get; set; }
-        public bool reachedEndOfPath { get; set; }
-        public Vector3 endOfPath => destination;
-        public Vector3 destination { get; set; }
-        public bool canSearch { get; set; }
-        public bool simulateMovement { get; set; } = true;
-        public bool hasPath { get; set; }
-        public bool pathPending { get; set; }
-        public bool updatePosition { get; set; } = true;
-        public bool updateRotation { get; set; } = true;
-        public bool isStopped { get; set; }
-        public Vector3 steeringTarget => destination;
-        public System.Action onSearchPath { get; set; }
-        public NativeMovementPlane movementPlane => default;
-
-        public void GetRemainingPath(List<Vector3> buffer, out bool stale)
-        {
-            buffer.Clear();
-            buffer.Add(FakePosition);
-            stale = false;
-        }
-
-        public void GetRemainingPath(
-            List<Vector3> buffer,
-            List<PathPartWithLinkInfo> partsBuffer,
-            out bool stale)
-        {
-            GetRemainingPath(buffer, out stale);
-            partsBuffer?.Clear();
-        }
-
-        public void SearchPath()
-        {
-            if (ThrowOnSearchPath)
-            {
-                // 模拟底层 A* 在创建路径时失败。
-                throw new System.InvalidOperationException("测试寻路失败");
-            }
-
-            SearchPathCount++;
-            onSearchPath?.Invoke();
-        }
-
-        public void SetPath(Path path, bool updateDestinationFromPath = true)
-        {
-        }
-
-        public void Teleport(Vector3 newPosition, bool clearPath = true)
-        {
-            FakePosition = newPosition;
-        }
-
-        public void Move(Vector3 deltaPosition)
-        {
-            FakePosition += deltaPosition;
-        }
-
-        public void MovementUpdate(float deltaTime, out Vector3 nextPosition, out Quaternion nextRotation)
-        {
-            nextPosition = FakePosition;
-            nextRotation = rotation;
-        }
-
-        public void FinalizeMovement(Vector3 nextPosition, Quaternion nextRotation)
-        {
-            FakePosition = nextPosition;
-            rotation = nextRotation;
-        }
+            MaxHp = hp,
+            Atk = 1,
+            Range = 5,
+            MoveSpeed = moveSpeed,
+            AtkSpeed = 1f,
+            WindUpTime = 0f,
+            BulletSpeed = 0f
+        };
     }
 }
 #endif

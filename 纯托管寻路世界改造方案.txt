@@ -1,134 +1,15 @@
-# 纯托管寻路世界改造方案
+# 纯托管寻路世界改造方案（已废弃）
 
-## 摘要
+本文件中的自建网格 A*、纯托管 ORCA、独立导航工作线程方案已废弃。
 
-将当前依赖 `IAstarAI`、`RVOController` 和场景组件的 `ChessMovementController` 拆分为：
+当前实现采用固定 100x100 无障碍矩形棋盘上的直接移动与局部 RVO 避让：
 
-- 纯 C# 导航核心：不可变网格、A*、路径跟随、ORCA 风格确定性避障。
-- 独立导航工作线程：只处理纯数据和命令，不访问 `GameObject`、`Transform`、`MonoBehaviour`、`Time`、`Physics` 或 A* Unity 组件。
-- Unity 主线程适配层：负责把 `ChessController` 数据提交为快照，并将导航结果回写到 `ChessRuntimeData`。
-- 旧 `IAstarAI/RVOController` 入口迁移到独立兼容适配器并标记弃用。
+- `BattleManager` 独占一个战斗工作线程，管理 `CampManager`、`CampGroup`、`ChessController`、FSM、攻击和子弹。
+- `GameManager` 运行在 Unity 主线程，独占创建、更新和销毁 `SimulatorBurst`。
+- `SimulatorBurst` 的 Job 调度和 `Complete` 不从自定义托管线程调用。
+- 战斗线程与主线程通过 `NavigationInputSnapshot`、`NavigationResultSnapshot` 交换数据。
+- 固定步长默认为 `1/60` 秒，单次最多追赶 4 步，允许一帧流水线延迟。
+- 棋子不再依赖 `IAstarAI`、`AIPath`、`AstarPath` 或 `RVOController`。
+- A* 包仍保留为项目依赖，但不作为棋子移动后端。
 
-依照已确认的选择，核心继续使用 `UnityEngine.Vector2` 作为值类型，但不调用任何 Unity 对象或引擎 API。
-
-## 主要改动
-
-### 1. 新增纯托管导航核心
-
-在 `Assets/Scripts/Battle/Navigation/` 新增以下模块：
-
-- `NavigationGrid`
-  - 保存固定宽高、`cellSize`、原点和不可变 `blocked cells`。
-  - 提供世界坐标与网格坐标转换、边界检查、可通行检查。
-  - 地图创建后只读，不支持运行时增量修改。
-  - 静态障碍边界预先转换为可供 ORCA 使用的轴对齐障碍线段。
-
-- `NavigationWorld`
-  - 持有网格和全部代理的工作线程状态。
-  - 公共方法只提交命令，不直接操作代理内部状态。
-  - 代理使用稳定的 `int AgentId`，不得使用 `ChessController` 引用作为键。
-  - 代理状态、路径、速度、目标和命令状态全部由导航线程独占。
-
-- `NavigationAgentConfig`
-  - `Radius` 默认 `0.5f`。
-  - `MaxSpeed` 来源于棋子配置。
-  - ORCA 参数默认接近现有 RVO：代理时间视野 `2s`、障碍时间视野 `0.5s`、最大邻居数 `10`、优先级 `0.5`、对称破缺偏置 `0.1`。
-  - 支持锁定代理和最大速度限制。
-
-- `NavigationSnapshot`
-  - 不可变批量结果，包含代理 ID、位置、速度、是否移动、是否到达、命令状态、请求版本和失败原因。
-  - 使用新对象整体发布，通过 `Volatile.Read/Write` 获取最新快照，避免共享可变集合。
-
-### 2. 纯 C# A* 规则
-
-网格寻路固定采用以下规则：
-
-- 8 邻接。
-- 直线代价固定为 `10`，斜线代价固定为 `14`。
-- 禁止切角：斜向移动时，两个相邻直角格必须都可通行。
-- 邻居枚举顺序固定。
-- 优先队列使用稳定排序键 `(f, h, g, cellIndex)`，保证相同输入得到完全一致的路径。
-- 起点或终点越界、落在阻挡格、或不存在路径时返回明确失败状态。
-- 代理半径参与可通行判断，对静态障碍执行保守膨胀，避免中心点可通行但代理实体穿入障碍。
-- 路径结果只包含网格中心点和最终目标点，不保存任何 Unity 场景对象。
-
-### 3. 确定性 ORCA 风格避障
-
-新增纯托管 `DeterministicOrcaSolver`：
-
-- 按 AgentId 排序处理代理，消除注册顺序造成的结果差异。
-- 使用代理间相对位置、相对速度、半径和时间视野构造 ORCA 半平面约束。
-- 使用固定顺序的线性规划求解最接近期望路径速度的可行速度。
-- 静态网格障碍边界作为障碍约束输入。
-- 采用固定迭代次数、固定 epsilon 和固定冲突回退规则。
-- 发生重叠时使用 AgentId 优先级进行确定性位置修正。
-- 验收目标是尽量接近 RVO/ORCA 的行为，同时保证同一输入可复现且代理不重叠；不再依赖 `RVOController` 或 `RVOSimulator`。
-
-### 4. 独立托管工作线程
-
-`NavigationWorld` 使用一个专属 `Thread`：
-
-- 线程安全命令包括：
-  - 注册/注销代理。
-  - 更新代理属性和当前输入快照。
-  - `MoveToPosition`。
-  - `MoveToTarget`。
-  - `Stop`。
-  - 提交帧时间。
-  - 关闭线程。
-- 命令带单调递增序列号；工作线程按序处理，避免多线程提交造成顺序不确定。
-- `MoveToPosition` 和 `MoveToTarget` 为非阻塞调用，返回请求版本/句柄。
-- 结果状态至少包含 `Accepted`、`PathPending`、`Succeeded`、`Failed`、`Canceled`。
-- 新命令自动使同一代理的旧请求失效；旧路径结果不得覆盖新请求。
-- 使用固定 `simulationStep` 累积外部提交的帧时间；不使用 `Time.deltaTime` 或实时钟。
-- 设置最大追帧步数，超出时按确定性规则丢弃多余累积时间并在快照中记录。
-- `StopAsync(TimeSpan timeout)` 停止接收新命令、唤醒线程并等待有限时间；超时返回失败，不强制终止线程。
-- 核心层不得在工作线程调用 `Debug.Log`，错误通过快照状态返回。
-
-### 5. Chess 系统适配
-
-修改 `ChessMovementController` 和 `ChessController`，但保留现有行为语义：
-
-- 保留 `MoveToPosition`、`MoveToTarget`、`Stop`、`Tick`、`Destination`、`HasDestination`、`IsMoving`、`HasReachedDestination` 等调用语义。
-- `ChessMovementController` 改为主线程门面，只持有 `NavigationWorld`、自身 `AgentId` 和必要的本地缓存。
-- `MoveToTarget(ChessController target)` 只转换为目标的 `AgentId`，工作线程不接触 `ChessController`。
-- FSM、攻击、伤害和目标选择继续在主线程执行。
-- `ChessController.Tick` 不再驱动 A* 组件；它只消费已发布的导航快照并同步 `RuntimeData.CurrentPosition`。
-- 导航世界每帧只提交一次批量代理快照和一次帧时间，避免每个棋子单独触发线程调度。
-- `MovementState`、`AttackState`、`DeadState` 对移动控制器的停止和状态判断保持原有行为。
-
-### 6. Unity 兼容适配层
-
-新增独立的 Unity 适配器：
-
-- 负责把场景中的 `Transform`/棋子表现层位置转换为导航输入。
-- 负责将导航线程返回的位置应用回 `Transform` 和 `ChessRuntimeData`。
-- 只在 Unity 主线程运行。
-- 现有 `IAstarAI/RVOController` 初始化入口迁移到该适配层并标记 `[Obsolete]`。
-- 旧适配器不得被 `NavigationWorld` 或纯核心引用。
-- A* 包可以继续保留在项目中，但不再作为棋子纯托管导航核心的依赖。
-
-## 测试计划
-
-新增或重写 EditMode 测试，覆盖：
-
-- 网格边界、坐标映射、阻挡格和代理半径膨胀。
-- 8 邻接路径、禁止切角、无路可达和稳定 tie-break。
-- 相同输入重复运行得到完全一致的路径和位置。
-- 固定时间步推进、到达判定、速度限制和追踪目标更新。
-- 代理之间的 ORCA 避让、静态障碍避让、重叠修正和 AgentId 稳定性。
-- 多线程提交移动命令、停止命令和代理注销，验证无竞态异常。
-- 请求版本覆盖：旧路径完成后不得覆盖新命令结果。
-- 工作线程启动、快照发布、有限超时停止和重复停止。
-- Unity 适配器只在主线程回写位置，FSM 状态切换行为与现有测试一致。
-- 旧 A* 适配器仅验证兼容行为，不作为纯核心测试的一部分。
-
-完成后运行全部 EditMode 测试，并检查 `AGENTS.md` 与 `CLAUDE.md` 文件大小仍小于 32KB。
-
-## 明确假设
-
-- “完全不依赖 GameObject”指纯导航核心和导航工作线程不依赖 Unity 场景对象；Unity 表现层仍可使用 GameObject。
-- 首版地图为创建时确定的只读网格，不支持运行时地图修改。
-- 对外继续使用连续 `Vector2` 坐标，内部进行网格采样。
-- 不要求纯导航核心在 Unity 进程之外独立编译；如未来需要服务器独立运行，可再将 `Vector2` 替换为自定义 `Float2` 并拆分程序集。
-- 不保留旧 Unity A* 后端作为正式运行后端；它仅作为迁移期兼容适配器。
+该文件仅保留迁移说明，禁止继续按原方案实现新的导航核心。

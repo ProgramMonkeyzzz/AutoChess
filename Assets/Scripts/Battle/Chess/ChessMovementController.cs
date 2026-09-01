@@ -1,22 +1,20 @@
 using System;
-using AutoChess;
+using AutoChess.Navigation;
 using Chess.FSM.State;
 using Config;
-using Pathfinding;
-using Pathfinding.RVO;
 using UnityEngine;
 
 namespace Chess
 {
     /// <summary>
-    /// 控制单个棋子的 A* 移动，并将 Unity 世界位置同步到棋子运行时数据。
+    /// 保存棋子移动命令，并在线程间生成和消费纯数据导航快照。
     /// </summary>
     public sealed class ChessMovementController
     {
-        /// <summary>棋子的固定半径。</summary>
+        /// <summary>棋子的固定碰撞半径。</summary>
         public const float ChessRadius = ChessBaseData.Radius;
 
-        /// <summary>两个棋子不重叠时所需的最小中心距。</summary>
+        /// <summary>两个棋子保持不重叠时的最小中心距。</summary>
         public const float NoOverlapDistance = ChessRadius * 2f;
 
         private const float PositionEpsilon = 0.001f;
@@ -29,29 +27,31 @@ namespace Chess
         }
 
         private readonly ChessController _chessController;
-        private readonly ChessBoard _chessBoard;
-        private readonly IAstarAI _astarAI;
-        private readonly RVOController _rvoController;
-
+        private readonly AutoChess.ChessBoard _chessBoard;
+        private readonly NavigationAgentHandle _agent;
         private MovementMode _movementMode;
         private Vector2 _destination;
         private bool _hasDestination;
-        private bool _movementAvailable = true;
-        private bool _reportedMissingRvo;
+        private bool _lastReachedDestination;
+        private bool _lastAvoidingAgents;
+        private int _commandVersion;
 
-        /// <summary>当前追踪的棋子；固定坐标移动时为空。</summary>
+        /// <summary>当前追踪的目标棋子；固定点移动时为空。</summary>
         public ChessController TargetChess { get; private set; }
 
-        /// <summary>当前命令对应的棋盘 XZ 坐标。</summary>
+        /// <summary>当前移动命令的目标位置。</summary>
         public Vector2 Destination => _destination;
 
         /// <summary>当前是否存在有效移动命令。</summary>
         public bool HasDestination => _hasDestination;
 
-        /// <summary>当前是否仍在向命令目标移动。</summary>
+        /// <summary>当前导航代理句柄。</summary>
+        public NavigationAgentHandle Agent => _agent;
+
+        /// <summary>当前是否仍需向命令目标移动。</summary>
         public bool IsMoving => _hasDestination && !HasReachedDestination;
 
-        /// <summary>当前命令是否已经到达目标位置或目标棋子外侧。</summary>
+        /// <summary>当前命令是否已到达固定点或目标棋子安全距离。</summary>
         public bool HasReachedDestination
         {
             get
@@ -63,78 +63,59 @@ namespace Chess
 
                 if (_movementMode == MovementMode.ChessTarget)
                 {
-                    return TargetChess != null && IsTargetWithinSafeDistance();
+                    return TargetChess != null && TargetChess.RuntimeData != null
+                           && Distance(_chessController.RuntimeData.CurrentPosition,
+                               TargetChess.RuntimeData.CurrentPosition) <= GetSafeTargetDistance();
                 }
 
-                return _movementMode == MovementMode.FixedPosition
-                       && !_astarAI.pathPending
-                       && _astarAI.reachedDestination;
+                return _lastReachedDestination;
             }
         }
 
-        /// <summary>
-        /// 创建移动控制器并绑定棋子、棋盘和 A* 移动组件。
-        /// </summary>
-        public ChessMovementController(ChessController chessController, ChessBoard chessBoard, IAstarAI astarAI)
+        /// <summary>最近一次导航结果是否显示代理正在避让其他棋子。</summary>
+        public bool IsAvoidingAgents => _lastAvoidingAgents;
+
+        /// <summary>创建绑定棋子、棋盘和导航代理句柄的移动控制器。</summary>
+        public ChessMovementController(
+            ChessController chessController,
+            AutoChess.ChessBoard chessBoard,
+            NavigationAgentHandle agent)
         {
             _chessController = chessController ?? throw new ArgumentNullException(nameof(chessController));
             _chessBoard = chessBoard ?? throw new ArgumentNullException(nameof(chessBoard));
-            _astarAI = astarAI ?? throw new ArgumentNullException(nameof(astarAI));
-
-            // A* 的半径只描述代理尺寸，连续的棋子避让由 RVOController 完成。
-            _astarAI.radius = ChessRadius;
-            if (_chessController.BaseData != null && _chessController.BaseData.MoveSpeed > 0)
+            if (!agent.IsValid)
             {
-                _astarAI.maxSpeed = _chessController.BaseData.MoveSpeed;
+                throw new ArgumentException("导航代理句柄无效。", nameof(agent));
             }
 
-            // IAstarAI 实现通常是挂在棋子 GameObject 上的 MonoBehaviour。
-            if (_astarAI is Component aiComponent)
+            _agent = agent;
+            if (_chessController.RuntimeData != null
+                && !_chessBoard.ContainsPosition(_chessController.RuntimeData.CurrentPosition))
             {
-                _rvoController = aiComponent.GetComponent<RVOController>();
-                if (_rvoController == null)
-                {
-                    ReportMissingRvo();
-                }
-                else
-                {
-                    _rvoController.radius = ChessRadius;
-                }
+                _chessController.RuntimeData.CurrentPosition = ClampPosition(_chessController.RuntimeData.CurrentPosition);
             }
-
-            SyncRuntimeData();
         }
 
-        /// <summary>
-        /// 发起或替换一次固定坐标移动。
-        /// </summary>
+        /// <summary>发起或替换一次固定位置移动。</summary>
         public bool MoveToPosition(Vector2 position)
         {
-            if (!CanMove() || !_chessBoard.ContainsPosition(position))
+            if (!CanMove() || !IsValidDestination(position))
             {
                 return false;
             }
 
             _movementMode = MovementMode.FixedPosition;
-            _destination = position;
+            _destination = ClampPosition(position);
             _hasDestination = true;
+            _lastReachedDestination = false;
+            _lastAvoidingAgents = false;
             TargetChess = null;
-            _astarAI.isStopped = false;
-
-            if (!ApplyDestination(position))
-            {
-                ResetCommand();
-                return false;
-            }
-
-            // 只有成功建立路径后才打断其他状态并进入移动状态。
+            _commandVersion++;
             _chessController.EnterMovementState();
             return true;
         }
 
-        /// <summary>
-        /// 发起或替换一次追踪棋子移动，并保持至少一个棋子直径的中心距。
-        /// </summary>
+        /// <summary>发起或替换一次追踪棋子移动，并保持双方半径之和的中心距。</summary>
         public bool MoveToTarget(ChessController target)
         {
             if (target == null || ReferenceEquals(target, _chessController))
@@ -144,7 +125,7 @@ namespace Chess
             }
 
             if (!CanMove() || target.RuntimeData == null
-                || !_chessBoard.ContainsPosition(target.RuntimeData.CurrentPosition))
+                || !IsValidDestination(target.RuntimeData.CurrentPosition))
             {
                 Stop();
                 return false;
@@ -152,219 +133,185 @@ namespace Chess
 
             _movementMode = MovementMode.ChessTarget;
             _hasDestination = true;
+            _lastReachedDestination = false;
+            _lastAvoidingAgents = false;
             TargetChess = target;
-            if (!RefreshTargetDestination(true))
+            _commandVersion++;
+            if (!RefreshTargetDestination())
             {
-                // 首次寻路失败时不保留半完成的追踪命令。
                 Stop();
                 return false;
             }
 
-            // 目标已进入安全距离也属于 MovementState 下的静止待机。
             _chessController.EnterMovementState();
             return true;
         }
 
-        /// <summary>
-        /// 停止移动并清除当前固定坐标或追踪目标命令。
-        /// </summary>
+        /// <summary>停止并清除当前移动命令。</summary>
         public void Stop()
         {
-            if (_astarAI != null)
-            {
-                _astarAI.isStopped = true;
-            }
-
             ResetCommand();
         }
 
-        /// <summary>
-        /// 每帧调用，刷新追踪目标并同步运行时坐标。
-        /// </summary>
+        /// <summary>根据战斗线程当前状态生成一个不包含 Unity 对象的导航输入快照。</summary>
+        public NavigationInputSnapshot BuildNavigationInput(long stepId)
+        {
+            if (_movementMode == MovementMode.ChessTarget && !RefreshTargetDestination())
+            {
+                ResetCommand();
+            }
+
+            Vector2 currentPosition = _chessController.RuntimeData == null
+                ? Vector2.zero
+                : ClampPosition(_chessController.RuntimeData.CurrentPosition);
+            Vector2 targetPosition = _hasDestination ? ClampPosition(_destination) : currentPosition;
+            float maxSpeed = GetMoveSpeed();
+            float distance = Distance(currentPosition, targetPosition);
+            float desiredSpeed = _hasDestination && !_lastReachedDestination && distance > PositionEpsilon
+                ? maxSpeed
+                : 0f;
+            bool enabled = _hasDestination && !IsDead() && desiredSpeed > 0f;
+            return new NavigationInputSnapshot(
+                stepId,
+                _agent,
+                currentPosition,
+                targetPosition,
+                desiredSpeed,
+                maxSpeed,
+                enabled,
+                _commandVersion);
+        }
+
+        /// <summary>消费主线程返回的导航结果并更新棋子运行时坐标。</summary>
+        public bool ApplyNavigationResult(NavigationResultSnapshot result)
+        {
+            if (result.Agent != _agent || result.CommandVersion != _commandVersion
+                || _chessController.RuntimeData == null)
+            {
+                return false;
+            }
+
+            _chessController.RuntimeData.CurrentPosition = ClampPosition(result.Position);
+            _lastReachedDestination = result.ReachedDestination;
+            _lastAvoidingAgents = result.AvoidingAgents;
+            return true;
+        }
+
+        /// <summary>兼容旧的单棋子 Tick 入口；导航结果由 BattleManager 统一消费。</summary>
         public void Tick()
         {
-            if (!SyncRuntimeData())
+            if (_movementMode == MovementMode.ChessTarget && !RefreshTargetDestination())
             {
-                Stop();
-                return;
-            }
-
-            if (_movementMode == MovementMode.ChessTarget && !RefreshTargetDestination(false))
-            {
-                Stop();
+                ResetCommand();
             }
         }
 
-        /// <summary>
-        /// 将 A* 组件的三维世界位置投影到棋盘 XZ 坐标。
-        /// </summary>
-        private bool SyncRuntimeData()
+        /// <summary>刷新追踪目标对应的安全终点。</summary>
+        private bool RefreshTargetDestination()
         {
-            if (_chessController.RuntimeData == null)
-            {
-                return false;
-            }
-
-            Vector3 position = _astarAI.position;
-            _chessController.RuntimeData.CurrentPosition = new Vector2(position.x, position.z);
-            return _chessBoard.ContainsPosition(_chessController.RuntimeData.CurrentPosition);
-        }
-
-        /// <summary>
-        /// 根据目标棋子当前位置刷新安全终点。
-        /// </summary>
-        private bool RefreshTargetDestination(bool forceSearch)
-        {
-            if (TargetChess == null || TargetChess.RuntimeData == null)
-            {
-                return false;
-            }
-
-            Vector2 targetPosition = TargetChess.RuntimeData.CurrentPosition;
-            if (!_chessBoard.ContainsPosition(targetPosition))
+            if (TargetChess == null || TargetChess.RuntimeData == null
+                || !IsValidDestination(TargetChess.RuntimeData.CurrentPosition))
             {
                 return false;
             }
 
             Vector2 currentPosition = _chessController.RuntimeData.CurrentPosition;
+            Vector2 targetPosition = TargetChess.RuntimeData.CurrentPosition;
             Vector2 toOwner = currentPosition - targetPosition;
-            float distance = toOwner.magnitude;
+            float distance = Length(toOwner);
             float safeDistance = GetSafeTargetDistance();
-
-            // 已经处于安全距离内时锁定当前位置，避免继续靠近目标。
             if (distance <= safeDistance)
             {
                 _destination = currentPosition;
-                _astarAI.isStopped = true;
+                _lastReachedDestination = true;
                 return true;
             }
 
             Vector2 direction = toOwner / distance;
             Vector2 nextDestination = targetPosition + direction * safeDistance;
-
-            if (!_chessBoard.ContainsPosition(nextDestination))
+            if (!IsValidDestination(nextDestination))
             {
                 return false;
             }
 
-            bool destinationChanged = !_hasDestination
-                                      || (nextDestination - _destination).sqrMagnitude
-                                      > PositionEpsilon * PositionEpsilon;
-            _destination = nextDestination;
-            _hasDestination = true;
-            _astarAI.isStopped = false;
-
-            // 目标未移动时不重复发起异步寻路请求。
-            if (!destinationChanged && !forceSearch)
+            if (Distance(nextDestination, _destination) > PositionEpsilon)
             {
-                return true;
+                _lastReachedDestination = false;
             }
 
-            return ApplyDestination(nextDestination);
-        }
-
-        /// <summary>
-        /// 将棋盘坐标转换为世界坐标，并立即请求 A* 重算路径。
-        /// </summary>
-        private bool ApplyDestination(Vector2 destination)
-        {
-            try
-            {
-                Vector3 currentPosition = _astarAI.position;
-                _astarAI.destination = new Vector3(destination.x, currentPosition.y, destination.y);
-                _astarAI.SearchPath();
-                return true;
-            }
-            catch (Exception exception)
-            {
-                Debug.LogError($"棋子 A* 寻路请求失败：{exception.Message}");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// 获取考虑 A* 到达容差后的安全追踪距离。
-        /// </summary>
-        private float GetSafeTargetDistance()
-        {
-            float arrivalTolerance = 0f;
-            if (_astarAI is AIBase aiBase)
-            {
-                arrivalTolerance = Mathf.Max(0f, aiBase.endReachedDistance);
-            }
-
-            // 终点两侧各留出到达容差，确保 AI 提前停下时仍不会进入对方半径。
-            return NoOverlapDistance + arrivalTolerance * 2f;
-        }
-
-        /// <summary>
-        /// 判断自身与追踪目标的实际中心距是否已进入安全停止范围。
-        /// </summary>
-        private bool IsTargetWithinSafeDistance()
-        {
-            if (TargetChess == null || TargetChess.RuntimeData == null)
-            {
-                return false;
-            }
-
-            return Vector2.Distance(_chessController.RuntimeData.CurrentPosition,
-                       TargetChess.RuntimeData.CurrentPosition) <= GetSafeTargetDistance();
-        }
-
-        /// <summary>
-        /// 检查 A* 组件、运行时数据和 RVO 配置是否可用于移动。
-        /// </summary>
-        private bool CanMove()
-        {
-            if (_chessController.RuntimeData == null || !_movementAvailable
-                || !_chessBoard.ContainsPosition(_chessController.RuntimeData.CurrentPosition))
-            {
-                return false;
-            }
-
-            if (_chessController.Fsm.CurrentState is DeadState)
-            {
-                return false;
-            }
-
-            if (_astarAI is Component aiComponent && aiComponent == null)
-            {
-                return false;
-            }
-
-            if (_astarAI is Component && (_rvoController == null || !_rvoController.enabled))
-            {
-                ReportMissingRvo();
-                return false;
-            }
-
+            _destination = ClampPosition(nextDestination);
             return true;
         }
 
-        /// <summary>
-        /// 清除当前命令，但不改变 A* 的停止状态。
-        /// </summary>
+        /// <summary>获取考虑双方半径后的目标安全距离。</summary>
+        private float GetSafeTargetDistance() => NoOverlapDistance;
+
+        /// <summary>检查移动命令是否允许建立。</summary>
+        private bool CanMove()
+        {
+            return _chessController.RuntimeData != null
+                   && _chessBoard.ContainsPosition(_chessController.RuntimeData.CurrentPosition)
+                   && !IsDead();
+        }
+
+        /// <summary>判断棋子是否已经死亡。</summary>
+        private bool IsDead()
+        {
+            return _chessController.RuntimeData == null
+                   || _chessController.RuntimeData.Hp <= 0
+                   || _chessController.Fsm.CurrentState is DeadState;
+        }
+
+        /// <summary>获取合法的棋子移动速度。</summary>
+        private float GetMoveSpeed()
+        {
+            float speed = _chessController.BaseData == null ? 0f : _chessController.BaseData.MoveSpeed;
+            return IsFinite(speed) && speed > 0f ? speed : 0f;
+        }
+
+        /// <summary>清除命令状态但不改变 FSM 当前状态。</summary>
         private void ResetCommand()
         {
             _movementMode = MovementMode.None;
             _destination = Vector2.zero;
             _hasDestination = false;
+            _lastReachedDestination = false;
+            _lastAvoidingAgents = false;
             TargetChess = null;
+            _commandVersion++;
         }
 
-        /// <summary>
-        /// 报告真实 Unity 棋子缺少 RVO 组件，并阻止其移动。
-        /// </summary>
-        private void ReportMissingRvo()
+        /// <summary>判断目标点是否为有限且位于棋盘中心点范围内的坐标。</summary>
+        private bool IsValidDestination(Vector2 position)
         {
-            _movementAvailable = false;
-            if (_reportedMissingRvo)
-            {
-                return;
-            }
-
-            _reportedMissingRvo = true;
-            Debug.LogError("ChessMovementController 要求棋子 GameObject 配置 RVOController 和场景 RVOSimulator。");
+            return IsFinite(position.x) && IsFinite(position.y)
+                   && _chessBoard.ContainsPosition(position);
         }
+
+        /// <summary>将中心点限制到考虑棋子半径后的棋盘范围。</summary>
+        private Vector2 ClampPosition(Vector2 position)
+        {
+            float min = ChessRadius;
+            float maxX = Math.Max(min, _chessBoard.Width - ChessRadius);
+            float maxY = Math.Max(min, _chessBoard.Height - ChessRadius);
+            return new Vector2(
+                Clamp(Sanitize(position.x), min, maxX),
+                Clamp(Sanitize(position.y), min, maxY));
+        }
+
+        /// <summary>计算二维向量长度。</summary>
+        private static float Length(Vector2 value) => (float)Math.Sqrt(value.x * value.x + value.y * value.y);
+
+        /// <summary>计算两个二维点之间的距离。</summary>
+        private static float Distance(Vector2 left, Vector2 right) => Length(left - right);
+
+        /// <summary>将浮点值限制在指定区间内。</summary>
+        private static float Clamp(float value, float min, float max) => Math.Max(min, Math.Min(max, value));
+
+        /// <summary>判断浮点值是否有限。</summary>
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
+        /// <summary>将无效浮点值转换为零。</summary>
+        private static float Sanitize(float value) => IsFinite(value) ? value : 0f;
     }
 }

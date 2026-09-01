@@ -1,6 +1,7 @@
 using System;
 using AutoChess;
 using AutoChess.Bullet;
+using AutoChess.Utils;
 using Chess.FSM.State;
 using Config;
 using UnityEngine;
@@ -37,11 +38,12 @@ namespace Chess
         }
 
         /// <summary>
-        /// 使用 Unity 帧时间推进攻击流程。
+        /// 兼容旧入口；正式战斗必须传入固定时间步。
         /// </summary>
+        [Obsolete("战斗逻辑必须由 BattleManager 传入固定时间步。")]
         public void Tick()
         {
-            Tick(Time.deltaTime);
+            Tick(1f / 60f);
         }
 
         /// <summary>
@@ -55,7 +57,7 @@ namespace Chess
                 return;
             }
 
-            float remainingTime = Mathf.Max(0f, deltaTime);
+            float remainingTime = Math.Max(0f, deltaTime);
             while (true)
             {
                 if (IsWindingUp)
@@ -240,7 +242,8 @@ namespace Chess
                     if (!_reportedMissingBulletManager)
                     {
                         _reportedMissingBulletManager = true;
-                        Debug.LogError("AttackController 未找到监听 BulletSpawnEvent 的 BulletManager，子弹伤害不会结算。");
+                        ThreadLogQueue.Enqueue(ThreadLogLevel.Error,
+                            "AttackController 未找到监听 BulletSpawnEvent 的 BulletManager，子弹伤害不会结算。");
                     }
 
                     return;

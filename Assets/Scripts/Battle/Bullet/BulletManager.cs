@@ -67,9 +67,10 @@ namespace AutoChess.Bullet
         /// <summary>
         /// 使用 Unity 帧时间更新所有活动子弹。
         /// </summary>
+        [Obsolete("战斗逻辑必须由 BattleManager 传入固定时间步。")]
         public void Tick()
         {
-            Tick(Time.deltaTime);
+            Tick(1f / 60f);
         }
 
         /// <summary>
@@ -82,7 +83,7 @@ namespace AutoChess.Bullet
                 return;
             }
 
-            float safeDeltaTime = Mathf.Max(0f, deltaTime);
+            float safeDeltaTime = Math.Max(0f, deltaTime);
             _completedBullets.Clear();
 
             foreach (BulletRuntimeData bullet in _bullets)
@@ -90,15 +91,15 @@ namespace AutoChess.Bullet
                 RefreshTargetPosition(bullet);
 
                 float maxDistanceDelta = bullet.Speed * safeDeltaTime;
-                float remainingDistance = Vector2.Distance(
+                float remainingDistance = Distance(
                     bullet.CurrentPosition,
                     bullet.LastTargetPosition);
-                bullet.CurrentPosition = Vector2.MoveTowards(
+                bullet.CurrentPosition = MoveTowards(
                     bullet.CurrentPosition,
                     bullet.LastTargetPosition,
                     maxDistanceDelta);
 
-                if (remainingDistance <= maxDistanceDelta || remainingDistance <= Mathf.Epsilon)
+                if (remainingDistance <= maxDistanceDelta || remainingDistance <= 0.000001f)
                 {
                     ApplyHitIfValid(bullet);
                     _completedBullets.Add(bullet);
@@ -217,6 +218,29 @@ namespace AutoChess.Bullet
             }
 
             bullet.Dispose();
+        }
+
+        /// <summary>计算两个棋盘坐标之间的距离，避免战斗线程调用 Unity 数学辅助 API。</summary>
+        private static float Distance(Vector2 left, Vector2 right)
+        {
+            float x = left.x - right.x;
+            float y = left.y - right.y;
+            return (float)Math.Sqrt(x * x + y * y);
+        }
+
+        /// <summary>按最大步长向目标移动一个棋盘坐标。</summary>
+        private static Vector2 MoveTowards(Vector2 current, Vector2 target, float maxDistanceDelta)
+        {
+            float x = target.x - current.x;
+            float y = target.y - current.y;
+            float distance = (float)Math.Sqrt(x * x + y * y);
+            if (distance <= maxDistanceDelta || distance <= 0.000001f)
+            {
+                return target;
+            }
+
+            float scale = maxDistanceDelta / distance;
+            return new Vector2(current.x + x * scale, current.y + y * scale);
         }
     }
 }

@@ -6,7 +6,7 @@
 
 ### Core Systems
 
-- **GameManager**: 全局单例管理器，负责协调各个子系统
+- **GameManager**: 全局单例管理器，运行在 Unity 主线程，负责创建 `NavigationManager`、调度 `SimulatorBurst` Job、推进 BattleManager 固定时钟和输出线程日志
 - **BattleManager**: 战斗系统的核心管理器，处理战斗流程
   - 构造时初始化 `CampManager`、`ChessBoard` 和 `BulletManager`
   - 通过 `Tick()` 统一驱动活动子弹，通过 `Dispose()` 释放事件监听和池对象
@@ -29,10 +29,10 @@
   - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`BulletSpeed`
   - `ChessBaseDataSo` 与 `ChessBaseData` 的字段必须保持一一对应，修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
-- **ChessMovementController**: 单个棋子的 A* 移动控制器
-  - 通过注入 `IAstarAI` 控制固定 XZ 坐标移动或追踪另一个棋子
-  - `ChessController` 每帧调用 `ChessMovementController.Tick()`，将 A* 世界坐标同步到 `CurrentPosition`
-  - 棋子预制体需要配置 `RVOController`，半径固定为 `0.5f`
+- **ChessMovementController**: 单个棋子的直接移动控制器
+  - 在无障碍矩形棋盘中保存直接移动/目标追踪命令，并生成纯数据导航快照
+  - 不再依赖 `IAstarAI`、`AstarPath` 或 `RVOController`
+  - 动态避让由主线程 `NavigationManager` 持有的 `SimulatorBurst` 统一处理
 - **AttackController**: 单个棋子的自动攻击控制器
   - 仅对 `TargetSelector.SelectedChessController` 中仍存活且处于 `BaseData.Range` 内的目标启动攻击
   - `AtkSpeed` 表示每秒攻击次数，命中后的攻击间隔为 `1 / AtkSpeed`
@@ -198,6 +198,9 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 状态子类不得绕过 `StateBase` 的生命周期模板，应重写 `OnStateEnterCore`、`OnStateStayCore` 或 `OnStateExitCore`
 - Enter/Exit 行为树各只 Tick 一次；若返回 Running，Enter 树在离开状态时取消，Exit 树在退出回调结束时立即取消
 - `ChessController` 创建后 FSM 已处于 `MovementState`；战斗循环应调用 `ChessController.Tick()`，不要再单独驱动 `ChessMovementController.Tick()`
+- `BattleManager` 的棋子、FSM、攻击、伤害和子弹逻辑只在其专属工作线程执行；`GameManager` 只在 Unity 主线程调用 `SimulatorBurst`
+- `NavigationManager` 的代理注册、`Tick`、Job `Complete` 和 `Dispose` 必须在创建它的 Unity 主线程调用
+- 战斗线程不得访问 `Time`、`Debug`、`Transform`、`GameObject` 或 Unity 组件；日志通过 `ThreadLogQueue` 转发到主线程
 - 移动命令由 `ChessController.Tick()` 持续驱动，不因切换到普通状态自动停止；进入 `DeadState` 时会显式停止，成功的新移动命令会自动切回 `MovementState`
 - `ChessMovementController` 的坐标使用 XZ 平面，`ChessController` 负责每帧同步 `CurrentPosition`
 - 通过 `ChessController.DamageReceiver.ApplyDamage()` 结算伤害后会立即检查 HP；HP 小于等于零时切换到 `DeadState`
