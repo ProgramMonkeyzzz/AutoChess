@@ -45,9 +45,9 @@
 - **BulletManager**: 监听 `BulletSpawnEvent`，负责子弹注册、逐帧追踪、命中伤害和池化回收
   - `Tick(float deltaTime)` 使用 `Vector2.MoveTowards` 在棋盘 XZ 平面更新活动子弹
   - 目标存活时持续追踪最新位置；目标失效后飞向最后有效位置并无伤害回收
-  - 命中时读取攻击者当前攻击力；攻击者死亡不会取消已经发射的子弹
+  - 创建时快照攻击者当前攻击力，命中使用快照；飞行期间攻击者攻击力变化不影响伤害；攻击者死亡不取消已发射子弹
   - `Dispose()` 反注册事件监听并回收所有活动子弹
-- **BulletRuntimeData**: 实现 `IPool`，由 `ObjectPool` 获取和回收
+- **BulletRuntimeData**: 实现 `IPool`，由 `ObjectPool` 获取和回收，保存创建时锁定的伤害快照
 - **BulletSpawnEvent**: 攻击控制器与子弹管理器之间的发射事件，携带攻击者、目标和子弹速度
 
 ### Chess FSM
@@ -211,6 +211,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止移动，退出取消前摇并保留冷却
 - 攻击状态下成功移动命令立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
 - `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
+- 子弹在创建时快照攻击者当前攻击力，飞行期间攻击力变化不影响命中伤害
 - 子弹命中后必须从活动集合移除并归还 `ObjectPool`，不得重复结算或重复回收
 - 行为树编辑源资产只在 Unity Editor 中使用，修改图后必须显式执行 `Export Bytes` 才会更新运行时 `.bytes`
 - NodeCanvas 原生 `BehaviourTree` 资产与本项目 `BehaviorTreeGraphAsset` 不兼容，不要混用两套运行时

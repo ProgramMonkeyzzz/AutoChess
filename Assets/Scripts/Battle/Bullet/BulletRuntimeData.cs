@@ -52,11 +52,14 @@ namespace AutoChess.Bullet
         /// <summary>子弹在棋盘 XZ 平面上的移动速度。</summary>
         public float Speed;
 
+        /// <summary>创建时锁定的最终伤害，飞行期间不再随攻击者攻击力变化。</summary>
+        public int Damage;
+
         /// <summary>抵达目标位置后是否仍允许造成伤害。</summary>
         public bool CanDamageTarget;
 
         /// <summary>
-        /// 使用一次发射请求初始化池化子弹数据。
+        /// 使用一次发射请求初始化池化子弹数据，并快照攻击者当前攻击力。
         /// </summary>
         public void Initialize(ChessController ownerChess, ChessController targetChess, float speed)
         {
@@ -65,6 +68,7 @@ namespace AutoChess.Bullet
             CurrentPosition = ownerChess.RuntimeData.CurrentPosition;
             LastTargetPosition = targetChess.RuntimeData.CurrentPosition;
             Speed = speed;
+            Damage = ownerChess.RuntimeData.GetCurrentAtk(ownerChess.BaseData.Atk);
             CanDamageTarget = true;
         }
 
@@ -78,6 +82,7 @@ namespace AutoChess.Bullet
             CurrentPosition = Vector2.zero;
             LastTargetPosition = Vector2.zero;
             Speed = 0f;
+            Damage = 0;
             CanDamageTarget = false;
             ObjectPool.Recycle(this);
         }

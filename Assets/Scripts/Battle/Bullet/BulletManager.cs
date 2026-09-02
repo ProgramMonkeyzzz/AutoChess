@@ -181,19 +181,16 @@ namespace AutoChess.Bullet
         }
 
         /// <summary>
-        /// 在目标仍有效时按命中瞬间的攻击者属性结算伤害。
+        /// 在目标仍有效时使用创建时锁定的伤害快照结算伤害。
         /// </summary>
         private static void ApplyHitIfValid(BulletRuntimeData bullet)
         {
-            if (!bullet.CanDamageTarget || !IsTargetAlive(bullet.TargetChess)
-                || bullet.OwnerChess == null || bullet.OwnerChess.RuntimeData == null
-                || bullet.OwnerChess.BaseData == null)
+            if (!bullet.CanDamageTarget || !IsTargetAlive(bullet.TargetChess))
             {
                 return;
             }
 
-            int damage = bullet.OwnerChess.RuntimeData.GetCurrentAtk(bullet.OwnerChess.BaseData.Atk);
-            bullet.TargetChess.DamageReceiver.ApplyDamage(damage);
+            bullet.TargetChess.DamageReceiver.ApplyDamage(bullet.Damage);
         }
 
         /// <summary>

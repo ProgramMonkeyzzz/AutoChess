@@ -45,6 +45,7 @@ public class BulletManagerTests
             Assert.That(bullet.TargetChess, Is.SameAs(_target));
             Assert.That(bullet.CurrentPosition, Is.EqualTo(Vector2.zero));
             Assert.That(bullet.Speed, Is.EqualTo(5f));
+            Assert.That(bullet.Damage, Is.EqualTo(12));
         }
     }
 
@@ -70,10 +71,10 @@ public class BulletManagerTests
     }
 
     /// <summary>
-    /// 验证子弹命中时读取攻击者当前攻击力，且攻击者死亡不取消已发射子弹。
+    /// 验证子弹命中使用创建时锁定的攻击力，飞行期间攻击者增益或死亡都不改变伤害。
     /// </summary>
     [Test]
-    public void HitUsesCurrentAttackEvenWhenOwnerDiesDuringFlight()
+    public void HitUsesSnapshotAttackEvenWhenOwnerBuffsOrDiesDuringFlight()
     {
         using (var manager = new BulletManager())
         {
@@ -85,6 +86,26 @@ public class BulletManagerTests
             manager.Tick(0.2f);
 
             Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
+            Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
+            Assert.That(manager.ActiveBulletCount, Is.EqualTo(0));
+        }
+    }
+
+    /// <summary>
+    /// 验证创建时已存在的攻击力增益会被快照，飞行期间倍率回落不影响命中伤害。
+    /// </summary>
+    [Test]
+    public void HitKeepsAttackSnapshotTakenAtBulletCreation()
+    {
+        using (var manager = new BulletManager())
+        {
+            _owner.RuntimeData.CurrentAtkMultipler = 2f;
+            BulletRuntimeData bullet = manager.RegisterBullet(_owner, _target, 10f);
+            Assert.That(bullet.Damage, Is.EqualTo(24));
+
+            _owner.RuntimeData.CurrentAtkMultipler = 1f;
+            manager.Tick(0.3f);
+
             Assert.That(_target.RuntimeData.Hp, Is.EqualTo(76));
             Assert.That(manager.ActiveBulletCount, Is.EqualTo(0));
         }
@@ -131,6 +152,7 @@ public class BulletManagerTests
             Assert.That(bullet.IsFromPool, Is.True);
             Assert.That(bullet.OwnerChess, Is.Null);
             Assert.That(bullet.CurrentPosition, Is.EqualTo(Vector2.zero));
+            Assert.That(bullet.Damage, Is.EqualTo(0));
         }
     }
 
