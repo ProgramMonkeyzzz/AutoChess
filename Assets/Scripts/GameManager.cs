@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using AutoChess.Navigation;
+using AutoChess.Render;
 using AutoChess.Utils;
 using Chess;
 using UnityEngine;
@@ -54,6 +55,9 @@ namespace AutoChess
 
         /// <summary>获取主线程导航管理器。</summary>
         public NavigationManager NavigationManager { get; private set; }
+        
+        /// <summary>获取渲染管理器。</summary>
+        public RenderManager RenderManager { get; private set; }
 
         /// <summary>Unity 生命周期初始化战斗、导航和固定步时钟。</summary>
         private void Awake()
