@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Threading;
 using AutoChess.Bullet;
 using AutoChess.Navigation;
+using AutoChess.Render;
 using AutoChess.Utils;
 using Camp;
 using Chess;
@@ -11,7 +12,7 @@ using Chess;
 namespace AutoChess
 {
     /// <summary>
-    /// 管理战斗状态专属线程，并通过纯数据快照与主线程导航调度器通信。
+    /// 管理战斗状态专属线程，并通过纯数据快照与主线程导航调度器和渲染管理器通信。
     /// </summary>
     public sealed class BattleManager : IDisposable
     {
@@ -40,6 +41,8 @@ namespace AutoChess
             new ConcurrentQueue<NavigationResultSnapshot>();
         private readonly List<NavigationResultSnapshot> _pendingResults =
             new List<NavigationResultSnapshot>();
+        /// <summary>战斗线程发布、主线程消费的最新渲染帧。</summary>
+        private BattleRenderFrame _latestRenderFrame;
         private readonly AutoResetEvent _advanceSignal = new AutoResetEvent(false);
         private readonly object _gate = new object();
         private Thread _worker;
@@ -188,6 +191,13 @@ namespace AutoChess
             }
         }
 
+        /// <summary>取出最新一份渲染帧；同一时刻只保留最新步，允许丢弃未消费的旧帧。</summary>
+        public bool TryConsumeRenderFrame(out BattleRenderFrame frame)
+        {
+            frame = Interlocked.Exchange(ref _latestRenderFrame, null);
+            return frame != null;
+        }
+
         /// <summary>取出一条完整导航输入记录，供 GameManager 按步组批处理。</summary>
         public bool TryDequeueNavigationInput(out NavigationInputSnapshot snapshot)
         {
@@ -298,14 +308,20 @@ namespace AutoChess
             }
         }
 
-        /// <summary>执行一个固定战斗步并发布导航输入快照。</summary>
+        /// <summary>执行一个固定战斗步并发布导航输入与渲染快照。</summary>
         private void RunStep()
         {
             long currentStep = ++_stepId;
             ApplyPendingNavigationResults(currentStep);
             _campManager.Tick(FixedStep);
             _bulletManager.Tick(FixedStep);
+            PublishNavigationInputs(currentStep);
+            PublishRenderFrame(currentStep);
+        }
 
+        /// <summary>按稳定代理顺序发布当前步的导航输入；无代理时仍发送结束标记。</summary>
+        private void PublishNavigationInputs(long currentStep)
+        {
             List<NavigationInputSnapshot> inputs = new List<NavigationInputSnapshot>();
             foreach (ChessController chess in _campManager.GetAllChesses())
             {
@@ -346,6 +362,38 @@ namespace AutoChess
                     input.CommandVersion,
                     i == inputs.Count - 1));
             }
+        }
+
+        /// <summary>拷贝存活棋子和活动子弹为不可变渲染帧，并只保留最新一份。</summary>
+        private void PublishRenderFrame(long currentStep)
+        {
+            List<ChessRenderSnapshot> chessSnapshots = new List<ChessRenderSnapshot>();
+            foreach (ChessController chess in _campManager.GetAllChesses())
+            {
+                if (chess == null || !chess.IsAlive)
+                {
+                    continue;
+                }
+
+                chessSnapshots.Add(chess.CreateRenderSnapshot());
+            }
+
+            List<BulletRenderSnapshot> bulletSnapshots = new List<BulletRenderSnapshot>();
+            foreach (BulletRuntimeData bullet in _bulletManager.Bullets)
+            {
+                if (bullet == null || bullet.BulletId <= 0)
+                {
+                    continue;
+                }
+
+                bulletSnapshots.Add(bullet.CreateRenderSnapshot());
+            }
+
+            BattleRenderFrame frame = new BattleRenderFrame(
+                currentStep,
+                chessSnapshots.ToArray(),
+                bulletSnapshots.ToArray());
+            Interlocked.Exchange(ref _latestRenderFrame, frame);
         }
 
         /// <summary>只应用早于当前战斗步的最新 RVO 结果，避免旧结果覆盖新命令。</summary>

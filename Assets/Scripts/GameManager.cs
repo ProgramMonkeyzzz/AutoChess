@@ -10,7 +10,7 @@ using UnityEngine;
 namespace AutoChess
 {
     /// <summary>
-    /// 全局 Unity 主线程管理器，负责 RVO Job 调度、战斗线程时钟和快照交换。
+    /// 全局 Unity 主线程管理器，负责 RVO Job 调度、战斗线程时钟、渲染快照消费和日志输出。
     /// </summary>
     public sealed class GameManager : MonoBehaviour
     {
@@ -74,6 +74,7 @@ namespace AutoChess
             DontDestroyOnLoad(gameObject);
             BattleManager = new BattleManager(DefaultFixedStep);
             NavigationManager = new NavigationManager(BattleManager.ChessBoard);
+            RenderManager = new RenderManager(transform);
             BattleManager.Start();
             _initialized = true;
         }
@@ -88,6 +89,7 @@ namespace AutoChess
 
             EnsureMainThread();
             DrainNavigationInputs();
+            ApplyRenderFrame();
 
             float deltaTime = Math.Max(0f, Time.deltaTime);
             _timeAccumulator += deltaTime;
@@ -143,6 +145,7 @@ namespace AutoChess
             {
                 _agentByChess[chess] = handle;
                 BattleManager.RegisterChess(campId, chessId, chess, handle);
+                CreateChessView(campId, chess);
             }
 
             return handle;
@@ -158,7 +161,44 @@ namespace AutoChess
                 _agentByChess.Remove(chess);
             }
 
+            if (chess != null)
+            {
+                RenderManager?.RemoveChessView(chess.InstanceId);
+            }
+
             BattleManager?.UnregisterChess(chess);
+        }
+
+        /// <summary>在主线程立刻创建棋子视图，使用注册前已经写好的棋盘坐标。</summary>
+        private void CreateChessView(int campId, ChessController chess)
+        {
+            if (RenderManager == null || chess == null)
+            {
+                return;
+            }
+
+            ChessView view = RenderManager.CreateChessView(chess.InstanceId, campId);
+            if (view == null || chess.RuntimeData == null)
+            {
+                return;
+            }
+
+            view.SetPosition(chess.RuntimeData.CurrentPosition);
+            view.SetForward(Vector2.up);
+        }
+
+        /// <summary>消费战斗线程发布的最新渲染帧并同步视图。</summary>
+        private void ApplyRenderFrame()
+        {
+            if (BattleManager == null || RenderManager == null)
+            {
+                return;
+            }
+
+            if (BattleManager.TryConsumeRenderFrame(out BattleRenderFrame frame))
+            {
+                RenderManager.ApplyFrame(frame);
+            }
         }
 
         /// <summary>消费 BattleManager 发布的完整导航输入批次。</summary>
@@ -209,7 +249,7 @@ namespace AutoChess
             }
         }
 
-        /// <summary>按顺序停止战斗线程并释放主线程导航资源。</summary>
+        /// <summary>按顺序停止战斗线程并释放主线程导航与渲染资源。</summary>
         private void OnDestroy()
         {
             if (_destroying)
@@ -224,6 +264,8 @@ namespace AutoChess
                 BattleManager.Dispose();
             }
 
+            RenderManager?.Dispose();
+            RenderManager = null;
             NavigationManager?.Dispose();
             _agentByChess.Clear();
             if (_instance == this)

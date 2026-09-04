@@ -6,7 +6,7 @@
 
 ### Core Systems
 
-- **GameManager**: 全局单例管理器，运行在 Unity 主线程，负责创建 `NavigationManager`、调度 `SimulatorBurst` Job、推进 BattleManager 固定时钟和输出线程日志
+- **GameManager**: 全局单例管理器，运行在 Unity 主线程，负责创建 `NavigationManager` 和 `RenderManager`、调度 `SimulatorBurst` Job、推进 BattleManager 固定时钟、消费渲染快照并输出线程日志
 - **BattleManager**: 战斗系统的核心管理器，处理战斗流程
   - 构造时初始化 `CampManager`、`ChessBoard` 和 `BulletManager`
   - 通过 `Tick()` 统一驱动活动子弹，通过 `Dispose()` 释放事件监听和池对象
@@ -23,7 +23,7 @@
   - 持有 `ChessTargetSelector` 用于目标选择
   - 持有 `ChessDamageReceiver`，通过 `DamageReceiver` 接收伤害并触发死亡状态检查
   - 持有 `AttackController`，通过 `AttackController.Tick()` 统一驱动攻击冷却、前摇和命中
-  - 构造时创建并启动 `Chess.FSM.FSM`，注册 `MovementState`、`AttackState`、`DeadState` 及相关状态转换，默认状态为 `MovementState`
+  - 构造时分配单调递增的 `InstanceId`，创建并启动 `Chess.FSM.FSM`，注册 `MovementState`、`AttackState`、`DeadState` 及相关状态转换，默认状态为 `MovementState`
   - 战斗循环通过 `ChessController.Tick()` 统一驱动当前状态、移动和攻击
 - **ChessBaseData**: 棋子的静态配置数据（从 ScriptableObject 导出）
   - 当前字段：`ChessId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`BulletSpeed`
@@ -47,8 +47,20 @@
   - 目标存活时持续追踪最新位置；目标失效后飞向最后有效位置并无伤害回收
   - 创建时快照攻击者当前攻击力，命中使用快照；飞行期间攻击者攻击力变化不影响伤害；攻击者死亡不取消已发射子弹
   - `Dispose()` 反注册事件监听并回收所有活动子弹
-- **BulletRuntimeData**: 实现 `IPool`，由 `ObjectPool` 获取和回收，保存创建时锁定的伤害快照
+- **BulletRuntimeData**: 实现 `IPool`，由 `ObjectPool` 获取和回收，保存创建时锁定的伤害快照；`Initialize` 分配新的 `BulletId`，`Dispose` 清零
 - **BulletSpawnEvent**: 攻击控制器与子弹管理器之间的发射事件，携带攻击者、目标和子弹速度
+
+### Render System
+
+表现层位于 `Assets/Scripts/Battle/Render/`，命名空间为 `AutoChess.Render`，只在 Unity 主线程运行：
+
+- `BattleManager` 每个固定步在阵营和子弹 Tick 之后发布 `BattleRenderFrame`，只保留最新一帧
+- 快照仅包含存活棋子和活动子弹的 `InstanceId`/`BulletId`、阵营、XZ 位置和 XZ 朝向；死亡棋子与已命中回收的子弹不会进入快照
+- `GameManager` 在消费导航输入后把最新帧交给 `RenderManager.ApplyFrame`；`RegisterChess` 会立刻创建棋子视图
+- `RenderManager` 从 `Resources/Prefabs/ChessView` 与 `Resources/Prefabs/BulletView` 实例化视图，按快照 upsert，并销毁快照中消失的棋子/子弹
+- `ChessView`/`BulletView` 将棋盘坐标映射为世界坐标 `(x, height, z)`，并在 XZ 平面设置朝向
+- SampleScene 含 100x100 的 `ChessBoard` Plane 和俯视相机，不自动生成棋子
+
 
 ### Chess FSM
 
@@ -111,6 +123,7 @@
   - `Chess/`: 棋子相关逻辑
     - `FSM/`: 棋子有限状态机
   - `Camp/`: 阵营管理逻辑
+  - `Render/`: 主线程棋子/子弹表现层
 - `Assets/Scripts/Config/`: 运行时配置数据结构
 - `Assets/Scripts/BehaviorTree/`: 纯 C# 行为树运行时、数据定义、黑板和二进制序列化
 - `Assets/Scripts/Editor/`: 编辑器工具和 ScriptableObject 定义
@@ -118,6 +131,7 @@
 - `Assets/Tests/Editor/`: Unity EditMode 测试
 - `Assets/Configs/`: ScriptableObject 配置资源（源文件）
 - `Assets/Resources/Configs/`: 导出的二进制配置（运行时加载）
+- `Assets/Resources/Prefabs/`: 棋子和子弹表现预制体
 - `Assets/Plugins/UniTask/`: UniTask 异步库
 - `Packages/com.arongranberg.astar/`: A* 寻路包
 
@@ -136,6 +150,7 @@
   - `ChessMovementControllerTests` 覆盖移动命令、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、攻击冷却、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
+  - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建和 BattleManager 帧发布
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
   - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog 和 bytes 导出往返
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
@@ -165,6 +180,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 ### Namespace Conventions
 
 - `AutoChess`: 游戏全局管理器
+- `AutoChess.Render`: 主线程战斗表现层
 - `AutoChess.Utils`: 通用工具类
 - `AutoChess.Editor`: 编辑器工具
 - `Chess`: 棋子系统
@@ -216,7 +232,8 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 行为树编辑源资产只在 Unity Editor 中使用，修改图后必须显式执行 `Export Bytes` 才会更新运行时 `.bytes`
 - NodeCanvas 原生 `BehaviourTree` 资产与本项目 `BehaviorTreeGraphAsset` 不兼容，不要混用两套运行时
 - 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
-- 棋子移动依赖 `RVOController` 和场景中的 `RVOSimulator`；缺少任一组件时移动命令会被拒绝
+- 战斗线程不得直接读写 `ChessView`/`BulletView`；表现同步只走 `BattleRenderFrame`，死亡棋子和命中子弹从快照消失后由 `RenderManager` 销毁视图
+- `RegisterChess` 前必须写好 `RuntimeData.CurrentPosition`；棋子/子弹预制体缺失时主线程报错并跳过创建
 - 行为树定义只能保存数据，不得保存委托、运行时节点、黑板或 Unity 场景对象；自定义叶节点必须通过稳定 `LogicId` 注册
 - Blackboard 值类型条目由 `ValueTypeWrap<T>` 承载，删除或清空时必须让包装对象重置并归还 `ObjectPool`；`Nullable<T>` 不满足包装类的非可空 `struct` 约束，沿用 object 存储
 - `ParallelNode` 达到终态时会中止仍在 Running 的子节点；异步节点必须响应运行器传入的取消令牌

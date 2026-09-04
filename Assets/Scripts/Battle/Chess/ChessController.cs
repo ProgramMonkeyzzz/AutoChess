@@ -1,15 +1,21 @@
 using System;
+using System.Threading;
 using AutoChess;
 using AutoChess.Navigation;
+using AutoChess.Render;
 using Camp;
 using Chess.FSM;
 using Chess.FSM.State;
 using Config;
+using UnityEngine;
 
 namespace Chess
 {
     public class ChessController
     {
+        /// <summary>进程内单调递增的棋子实例唯一 ID。</summary>
+        public int InstanceId { get; }
+
         public int Camp => _camp;
         public ChessRuntimeData RuntimeData => _chessRuntimeData;
         public ChessBaseData BaseData => _chessBaseData;
@@ -46,6 +52,12 @@ namespace Chess
         private AttackToDeadTransition _attackToDeadTransition;
         /// <summary>该棋子的攻击控制器。</summary>
         private AttackController _attackController;
+        /// <summary>上一份渲染快照中的棋盘位置，用于计算位移朝向。</summary>
+        private Vector2 _lastRenderPosition;
+        /// <summary>是否已经生成过渲染快照。</summary>
+        private bool _hasLastRenderPosition;
+        /// <summary>棋子实例 ID 生成器。</summary>
+        private static int _nextInstanceId;
 
         /// <summary>
         /// 创建棋子控制器，并准备运行时可变数据。
@@ -59,6 +71,7 @@ namespace Chess
         /// </summary>
         public ChessController(ChessBaseData baseData)
         {
+            InstanceId = Interlocked.Increment(ref _nextInstanceId);
             _chessBaseData = baseData;
             // 移动控制器需要持续写入运行时位置，因此默认保证数据对象存在。
             _chessRuntimeData = new ChessRuntimeData();
@@ -201,6 +214,68 @@ namespace Chess
             }
 
             _fsm.ChangeState<DeadState>();
+        }
+
+        /// <summary>
+        /// 判断棋子是否仍应出现在渲染快照中。
+        /// </summary>
+        internal bool IsAlive
+        {
+            get
+            {
+                return _chessRuntimeData != null
+                       && _chessRuntimeData.Hp > 0
+                       && !(_fsm.CurrentState is DeadState);
+            }
+        }
+
+        /// <summary>
+        /// 生成当前棋子的渲染快照，并更新位移朝向所需的上一帧位置。
+        /// </summary>
+        public ChessRenderSnapshot CreateRenderSnapshot()
+        {
+            Vector2 position = _chessRuntimeData == null ? Vector2.zero : _chessRuntimeData.CurrentPosition;
+            Vector2 forward = ResolveRenderForward(position);
+            _lastRenderPosition = position;
+            _hasLastRenderPosition = true;
+            return new ChessRenderSnapshot(InstanceId, _camp, position, forward);
+        }
+
+        /// <summary>
+        /// 按索敌目标、移动终点、本步位移的优先级计算 XZ 朝向。
+        /// </summary>
+        private Vector2 ResolveRenderForward(Vector2 position)
+        {
+            ChessController selected = _targetSelector == null ? null : _targetSelector.SelectedChessController;
+            if (selected != null && !ReferenceEquals(selected, this) && selected.IsAlive
+                && selected.RuntimeData != null)
+            {
+                Vector2 toTarget = selected.RuntimeData.CurrentPosition - position;
+                if (toTarget.sqrMagnitude > 0.000001f)
+                {
+                    return toTarget;
+                }
+            }
+
+            if (_movementController != null && _movementController.HasDestination)
+            {
+                Vector2 toDestination = _movementController.Destination - position;
+                if (toDestination.sqrMagnitude > 0.000001f)
+                {
+                    return toDestination;
+                }
+            }
+
+            if (_hasLastRenderPosition)
+            {
+                Vector2 displacement = position - _lastRenderPosition;
+                if (displacement.sqrMagnitude > 0.000001f)
+                {
+                    return displacement;
+                }
+            }
+
+            return Vector2.up;
         }
     }
 }

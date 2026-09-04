@@ -1,3 +1,5 @@
+using System.Threading;
+using AutoChess.Render;
 using AutoChess.Utils;
 using Chess;
 using UnityEngine;
@@ -34,8 +36,14 @@ namespace AutoChess.Bullet
     /// </summary>
     public class BulletRuntimeData : IPool
     {
+        /// <summary>子弹实例 ID 生成器。</summary>
+        private static int _nextBulletId;
+
         /// <summary>该实例是否由对象池创建。</summary>
         public bool IsFromPool { get; set; }
+
+        /// <summary>本次发射分配的子弹唯一 ID；回收后为 0。</summary>
+        public int BulletId;
 
         /// <summary>发射子弹的棋子。</summary>
         public ChessController OwnerChess;
@@ -63,6 +71,7 @@ namespace AutoChess.Bullet
         /// </summary>
         public void Initialize(ChessController ownerChess, ChessController targetChess, float speed)
         {
+            BulletId = Interlocked.Increment(ref _nextBulletId);
             OwnerChess = ownerChess;
             TargetChess = targetChess;
             CurrentPosition = ownerChess.RuntimeData.CurrentPosition;
@@ -77,6 +86,7 @@ namespace AutoChess.Bullet
         /// </summary>
         public void Dispose()
         {
+            BulletId = 0;
             OwnerChess = null;
             TargetChess = null;
             CurrentPosition = Vector2.zero;
@@ -86,5 +96,19 @@ namespace AutoChess.Bullet
             CanDamageTarget = false;
             ObjectPool.Recycle(this);
         }
+        /// <summary>
+        /// 生成当前子弹的渲染快照。
+        /// </summary>
+        public BulletRenderSnapshot CreateRenderSnapshot()
+        {
+            Vector2 forward = LastTargetPosition - CurrentPosition;
+            if (forward.sqrMagnitude <= 0.000001f)
+            {
+                forward = Vector2.up;
+            }
+
+            return new BulletRenderSnapshot(BulletId, CurrentPosition, forward);
+        }
     }
 }
+
