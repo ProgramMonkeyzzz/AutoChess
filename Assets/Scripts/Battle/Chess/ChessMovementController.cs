@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Chess
 {
     /// <summary>
-    /// 保存棋子移动命令，并在线程间生成和消费纯数据导航快照。
+    /// 保存棋子移动、追踪和远离命令，并在线程间生成和消费纯数据导航快照。
     /// </summary>
     public sealed class ChessMovementController
     {
@@ -23,7 +23,9 @@ namespace Chess
         {
             None,
             FixedPosition,
-            ChessTarget
+            ChessTarget,
+            /// <summary>持续向当前目标的反方向移动。</summary>
+            FleeTarget
         }
 
         private readonly ChessController _chessController;
@@ -36,7 +38,7 @@ namespace Chess
         private bool _lastAvoidingAgents;
         private int _commandVersion;
 
-        /// <summary>当前追踪的目标棋子；固定点移动时为空。</summary>
+        /// <summary>当前追踪或远离的目标棋子；固定点移动时为空。</summary>
         public ChessController TargetChess { get; private set; }
 
         /// <summary>当前移动命令的目标位置。</summary>
@@ -51,7 +53,7 @@ namespace Chess
         /// <summary>当前是否仍需向命令目标移动。</summary>
         public bool IsMoving => _hasDestination && !HasReachedDestination;
 
-        /// <summary>当前命令是否已到达固定点或目标棋子安全距离。</summary>
+        /// <summary>当前命令是否已到达固定点、目标安全距离或远离终点。</summary>
         public bool HasReachedDestination
         {
             get
@@ -66,6 +68,13 @@ namespace Chess
                     return TargetChess != null && TargetChess.RuntimeData != null
                            && Distance(_chessController.RuntimeData.CurrentPosition,
                                TargetChess.RuntimeData.CurrentPosition) <= GetSafeTargetDistance();
+                }
+
+                if (_movementMode == MovementMode.FleeTarget)
+                {
+                    return _chessController.RuntimeData != null
+                           && (Distance(_chessController.RuntimeData.CurrentPosition, _destination)
+                               <= PositionEpsilon || _lastReachedDestination);
                 }
 
                 return _lastReachedDestination;
@@ -147,6 +156,38 @@ namespace Chess
             return true;
         }
 
+        /// <summary>发起或替换一次远离目标的移动，并持续把终点刷新到反方向棋盘边缘。</summary>
+        public bool MoveAwayFromTarget(ChessController target)
+        {
+            if (target == null || ReferenceEquals(target, _chessController))
+            {
+                Stop();
+                return false;
+            }
+
+            if (!CanMove() || target.RuntimeData == null
+                || !IsValidDestination(target.RuntimeData.CurrentPosition))
+            {
+                Stop();
+                return false;
+            }
+
+            _movementMode = MovementMode.FleeTarget;
+            _hasDestination = true;
+            _lastReachedDestination = false;
+            _lastAvoidingAgents = false;
+            TargetChess = target;
+            _commandVersion++;
+            if (!RefreshFleeDestination())
+            {
+                Stop();
+                return false;
+            }
+
+            _chessController.EnterMovementState();
+            return true;
+        }
+
         /// <summary>停止并清除当前移动命令。</summary>
         public void Stop()
         {
@@ -156,7 +197,7 @@ namespace Chess
         /// <summary>根据战斗线程当前状态生成一个不包含 Unity 对象的导航输入快照。</summary>
         public NavigationInputSnapshot BuildNavigationInput(long stepId)
         {
-            if (_movementMode == MovementMode.ChessTarget && !RefreshTargetDestination())
+            if (!RefreshTrackedDestination())
             {
                 ResetCommand();
             }
@@ -200,10 +241,26 @@ namespace Chess
         /// <summary>兼容旧的单棋子 Tick 入口；导航结果由 BattleManager 统一消费。</summary>
         public void Tick()
         {
-            if (_movementMode == MovementMode.ChessTarget && !RefreshTargetDestination())
+            if (!RefreshTrackedDestination())
             {
                 ResetCommand();
             }
+        }
+
+        /// <summary>按当前命令模式刷新追踪或远离终点；固定点命令保持原终点。</summary>
+        private bool RefreshTrackedDestination()
+        {
+            if (_movementMode == MovementMode.ChessTarget)
+            {
+                return RefreshTargetDestination();
+            }
+
+            if (_movementMode == MovementMode.FleeTarget)
+            {
+                return RefreshFleeDestination();
+            }
+
+            return true;
         }
 
         /// <summary>刷新追踪目标对应的安全终点。</summary>
@@ -240,6 +297,44 @@ namespace Chess
             }
 
             _destination = ClampPosition(nextDestination);
+            return true;
+        }
+
+        /// <summary>刷新远离目标时指向棋盘边缘的终点。</summary>
+        private bool RefreshFleeDestination()
+        {
+            if (TargetChess == null || TargetChess.RuntimeData == null
+                || !IsValidDestination(TargetChess.RuntimeData.CurrentPosition)
+                || _chessController.RuntimeData == null)
+            {
+                return false;
+            }
+
+            Vector2 currentPosition = _chessController.RuntimeData.CurrentPosition;
+            Vector2 targetPosition = TargetChess.RuntimeData.CurrentPosition;
+            Vector2 away = currentPosition - targetPosition;
+            float distance = Length(away);
+            if (distance <= PositionEpsilon)
+            {
+                away = Vector2.up;
+                distance = 1f;
+            }
+
+            float fleeDistance = Math.Max(_chessBoard.Width, _chessBoard.Height);
+            Vector2 nextDestination = ClampPosition(currentPosition + away / distance * fleeDistance);
+            if (Distance(nextDestination, currentPosition) <= PositionEpsilon)
+            {
+                _destination = currentPosition;
+                _lastReachedDestination = true;
+                return true;
+            }
+
+            if (Distance(nextDestination, _destination) > PositionEpsilon)
+            {
+                _lastReachedDestination = false;
+            }
+
+            _destination = nextDestination;
             return true;
         }
 

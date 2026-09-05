@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System.Reflection;
 using AutoChess;
+using AutoChess.Navigation;
 using AutoChess.Bullet;
 using AutoChess.Utils;
 using Chess;
@@ -14,6 +15,10 @@ public class AttackControllerTests
 {
     private ChessController _attacker;
     private ChessController _target;
+    /// <summary>移动相关测试使用的棋盘。</summary>
+    private ChessBoard _board;
+    /// <summary>移动相关测试使用的导航管理器。</summary>
+    private NavigationManager _navigation;
 
     [SetUp]
     public void SetUp()
@@ -34,6 +39,11 @@ public class AttackControllerTests
     public void TearDown()
     {
         EventDispatcher.Instance.ClearAll();
+        if (_navigation != null)
+        {
+            _navigation.Dispose();
+            _navigation = null;
+        }
     }
 
     /// <summary>
@@ -393,6 +403,91 @@ public class AttackControllerTests
         SelectTarget(_attacker, _target);
 
         Assert.DoesNotThrow(_attacker.Tick);
+    }
+
+    /// <summary>
+    /// 验证存在未到达的移动命令时，Tick 不会自动起手。
+    /// </summary>
+    [Test]
+    public void TickDoesNotStartAttackWhileMoving()
+    {
+        BindAttackerMovement(new Vector2(2f, 4f));
+        _target.RuntimeData.CurrentPosition = new Vector2(5f, 4f);
+        Assert.That(_attacker.MovementController.MoveToPosition(new Vector2(12f, 12f)), Is.True);
+        Assert.That(_attacker.MovementController.IsMoving, Is.True);
+
+        _attacker.AttackController.Tick(0f);
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.AttackController.IsAttackInProgress, Is.False);
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_attacker.MovementController.HasDestination, Is.True);
+    }
+
+    /// <summary>
+    /// 验证 AttackTarget() 在移动中仍能强制起手并停止移动。
+    /// </summary>
+    [Test]
+    public void AttackTargetStartsAttackWhileMovingAndStopsMovement()
+    {
+        BindAttackerMovement(new Vector2(2f, 4f));
+        _target.RuntimeData.CurrentPosition = new Vector2(5f, 4f);
+        Assert.That(_attacker.MovementController.MoveToPosition(new Vector2(12f, 12f)), Is.True);
+
+        _attacker.AttackController.AttackTarget();
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_attacker.MovementController.HasDestination, Is.False);
+    }
+
+    /// <summary>
+    /// 验证没有移动命令时 Tick 仍会自动起手。
+    /// </summary>
+    [Test]
+    public void TickStartsAttackWhenStandingWithoutMoveCommand()
+    {
+        BindAttackerMovement(new Vector2(2f, 4f));
+        _target.RuntimeData.CurrentPosition = new Vector2(5f, 4f);
+
+        _attacker.AttackController.Tick(0f);
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+    }
+
+    /// <summary>
+    /// 验证已经到达目标后 Tick 仍会自动起手。
+    /// </summary>
+    [Test]
+    public void TickStartsAttackAfterReachingMoveTarget()
+    {
+        BindAttackerMovement(new Vector2(2f, 4f));
+        _target.RuntimeData.CurrentPosition = new Vector2(2.5f, 4f);
+        Assert.That(_attacker.MovementController.MoveToTarget(_target), Is.True);
+        Assert.That(_attacker.MovementController.HasReachedDestination, Is.True);
+        Assert.That(_attacker.MovementController.IsMoving, Is.False);
+
+        _attacker.AttackController.Tick(0f);
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+    }
+
+    /// <summary>
+    /// 为攻击者绑定导航代理，供移动与自动起手测试使用。
+    /// </summary>
+    private void BindAttackerMovement(Vector2 position)
+    {
+        _board = new ChessBoard { Width = 20, Height = 20 };
+        _navigation = new NavigationManager(_board);
+        _attacker.RuntimeData.CurrentPosition = position;
+        NavigationAgentHandle agent = _navigation.RegisterAgent(
+            position,
+            ChessMovementController.ChessRadius,
+            2f);
+        _attacker.InitializeMovement(_board, agent);
     }
 
     private static ChessBaseData CreateConfig(

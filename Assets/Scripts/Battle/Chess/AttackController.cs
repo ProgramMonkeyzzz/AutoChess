@@ -9,7 +9,7 @@ using UnityEngine;
 namespace Chess
 {
     /// <summary>
-    /// 根据当前索敌目标驱动攻击冷却、起手前摇和命中伤害。
+    /// 根据当前索敌目标驱动攻击冷却、起手前摇和命中伤害；自动起手仅在未移动时发生。
     /// </summary>
     public sealed class AttackController
     {
@@ -101,7 +101,8 @@ namespace Chess
                     _cooldownRemaining = 0f;
                 }
 
-                if (!TryStartAttack())
+                // 移动过程中不自动起手，避免打断远离/追击；AttackTarget() 仍可强制开打。
+                if (IsOwnerMoving() || !TryStartAttack())
                 {
                     return;
                 }
@@ -145,6 +146,15 @@ namespace Chess
                    && baseData.AtkSpeed > 0
                    && baseData.Range >= 0f
                    && baseData.WindUpTime >= 0f;
+        }
+
+        /// <summary>
+        /// 判断棋子当前是否仍在执行未到达的移动命令。
+        /// </summary>
+        private bool IsOwnerMoving()
+        {
+            ChessMovementController movement = _chessController.MovementController;
+            return movement != null && movement.IsMoving;
         }
 
         /// <summary>

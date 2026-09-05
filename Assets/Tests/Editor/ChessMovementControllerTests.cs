@@ -182,6 +182,93 @@ public class ChessMovementControllerTests
         Assert.That(_owner.RuntimeData.CurrentPosition, Is.EqualTo(new Vector2(2f, 4f)));
     }
 
+    /// <summary>验证远离目标会把终点放到反方向并夹到棋盘内。</summary>
+    [Test]
+    public void MoveAwayFromTargetPlacesOppositeDestination()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
+
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+        Assert.That(_movement.TargetChess, Is.SameAs(target));
+        Assert.That(_movement.Destination.x, Is.EqualTo(0.5f).Within(0.0001f));
+        Assert.That(_movement.Destination.y, Is.EqualTo(4f).Within(0.0001f));
+        Assert.That(_movement.HasReachedDestination, Is.False);
+        Assert.That(_movement.IsMoving, Is.True);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+    }
+
+    /// <summary>验证目标移动后 Tick 会刷新远离终点。</summary>
+    [Test]
+    public void MoveAwayFromTargetRefreshesDestinationWhenTargetMoves()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+
+        target.RuntimeData.CurrentPosition = new Vector2(2f, 1f);
+        _movement.Tick();
+
+        Assert.That(_movement.Destination.x, Is.EqualTo(2f).Within(0.0001f));
+        Assert.That(_movement.Destination.y, Is.EqualTo(19.5f).Within(0.0001f));
+    }
+
+    /// <summary>验证与目标重叠时远离使用默认 +Z 方向。</summary>
+    [Test]
+    public void MoveAwayFromTargetUsesDefaultDirectionWhenOverlapping()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = _owner.RuntimeData.CurrentPosition;
+
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+        Assert.That(_movement.Destination.x, Is.EqualTo(2f).Within(0.0001f));
+        Assert.That(_movement.Destination.y, Is.EqualTo(19.5f).Within(0.0001f));
+    }
+
+    /// <summary>验证已经贴在远离方向边缘时视为到达。</summary>
+    [Test]
+    public void MoveAwayFromTargetReachesWhenAlreadyOnFarEdge()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        _owner.RuntimeData.CurrentPosition = new Vector2(0.5f, 4f);
+        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
+
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+        Assert.That(_movement.Destination.x, Is.EqualTo(0.5f).Within(0.0001f));
+        Assert.That(_movement.Destination.y, Is.EqualTo(4f).Within(0.0001f));
+        Assert.That(_movement.HasReachedDestination, Is.True);
+        Assert.That(_movement.IsMoving, Is.False);
+    }
+
+    /// <summary>验证死亡目标只要坐标合法仍可远离。</summary>
+    [Test]
+    public void MoveAwayFromTargetAllowsDeadTarget()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
+        target.RuntimeData.Hp = 0;
+
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+        Assert.That(_movement.HasDestination, Is.True);
+        Assert.That(_movement.Destination.x, Is.EqualTo(0.5f).Within(0.0001f));
+    }
+
+    /// <summary>验证自己或空目标会被拒绝，并清除已有远离命令。</summary>
+    [Test]
+    public void MoveAwayFromTargetRejectsSelfAndNull()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = new Vector2(12f, 4f);
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+
+        Assert.That(_movement.MoveAwayFromTarget(_owner), Is.False);
+        Assert.That(_movement.HasDestination, Is.False);
+
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+        Assert.That(_movement.MoveAwayFromTarget(null), Is.False);
+        Assert.That(_movement.HasDestination, Is.False);
+    }
+
     /// <summary>创建测试用棋子配置。</summary>
     private static ChessBaseData CreateConfig(int hp, float moveSpeed)
     {
