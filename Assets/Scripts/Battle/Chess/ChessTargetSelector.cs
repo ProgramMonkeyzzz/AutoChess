@@ -110,11 +110,11 @@ namespace Chess
         {
             var enemies = GetEnemyChesses();
             SelectedChessController = null;
-            int maxRange = int.MinValue;
+            float maxRange = float.MinValue;
 
             foreach (var enemy in enemies)
             {
-                int currentRange = enemy.RuntimeData.GetCurrentRange(enemy.BaseData.Range);
+                float currentRange = enemy.RuntimeData.GetCurrentRange(enemy.BaseData.Range);
                 if (currentRange > maxRange)
                 {
                     maxRange = currentRange;

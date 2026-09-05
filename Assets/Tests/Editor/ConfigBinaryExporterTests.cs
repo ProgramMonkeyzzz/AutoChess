@@ -29,7 +29,7 @@ public class ConfigBinaryExporterTests
         source.Name = "Test Chess";
         source.MaxHp = 500;
         source.Atk = 12;
-        source.Range = 3;
+        source.Range = 3.25f;
         source.MoveSpeed = 4.5f;
         source.AtkSpeed = 2.5f;
         source.WindUpTime = 0.75f;
@@ -60,7 +60,7 @@ public class ConfigBinaryExporterTests
         Assert.That(data.Name, Is.EqualTo("Test Chess"));
         Assert.That(data.MaxHp, Is.EqualTo(500));
         Assert.That(data.Atk, Is.EqualTo(12));
-        Assert.That(data.Range, Is.EqualTo(3));
+        Assert.That(data.Range, Is.EqualTo(3.25f));
         Assert.That(data.MoveSpeed, Is.EqualTo(4.5f));
         Assert.That(data.AtkSpeed, Is.EqualTo(2.5f));
         Assert.That(data.WindUpTime, Is.EqualTo(0.75f));

@@ -81,7 +81,7 @@ namespace Chess
                 _chessRuntimeData.CurrentAtkMultipler = 1;
                 _chessRuntimeData.CurrentAtkIncrement = 0;
                 _chessRuntimeData.CurrentRangeMultipler = 1;
-                _chessRuntimeData.CurrentRangeIncrement = 0;
+                _chessRuntimeData.CurrentRangeIncrement = 0f;
             }
 
             _targetSelector = new ChessTargetSelector(this);

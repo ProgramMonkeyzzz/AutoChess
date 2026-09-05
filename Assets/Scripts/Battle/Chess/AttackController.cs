@@ -143,7 +143,7 @@ namespace Chess
             ChessBaseData baseData = _chessController.BaseData;
             return baseData != null
                    && baseData.AtkSpeed > 0
-                   && baseData.Range >= 0
+                   && baseData.Range >= 0f
                    && baseData.WindUpTime >= 0f;
         }
 

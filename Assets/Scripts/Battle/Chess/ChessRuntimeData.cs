@@ -20,7 +20,7 @@ namespace Chess
         public float CurrentRangeMultipler;
 
         /// <summary>当前射程固定增量。</summary>
-        public int CurrentRangeIncrement;
+        public float CurrentRangeIncrement;
 
         /// <summary>棋子当前棋盘 XZ 坐标。</summary>
         public Vector2 CurrentPosition;
@@ -34,11 +34,11 @@ namespace Chess
         }
 
         /// <summary>
-        /// 根据基础射程计算当前最终射程。
+        /// 根据基础射程计算当前最终射程，结果保留浮点精度。
         /// </summary>
-        public int GetCurrentRange(int baseRange)
+        public float GetCurrentRange(float baseRange)
         {
-            return (int)(baseRange * CurrentRangeMultipler + CurrentRangeIncrement);
+            return baseRange * CurrentRangeMultipler + CurrentRangeIncrement;
         }
     }
 }

@@ -44,10 +44,56 @@ public class AttackControllerTests
     {
         Assert.That(_attacker.RuntimeData.Hp, Is.EqualTo(100));
         Assert.That(_attacker.RuntimeData.GetCurrentAtk(_attacker.BaseData.Atk), Is.EqualTo(12));
-        Assert.That(_attacker.RuntimeData.GetCurrentRange(_attacker.BaseData.Range), Is.EqualTo(5));
+        Assert.That(_attacker.RuntimeData.GetCurrentRange(_attacker.BaseData.Range), Is.EqualTo(5f));
         Assert.That(_attacker.TargetSelector, Is.Not.Null);
         Assert.That(_attacker.AttackController, Is.Not.Null);
         Assert.That(_attacker.TargetSelector.SelectedChessController, Is.SameAs(_target));
+    }
+
+    /// <summary>
+    /// 验证运行时射程乘区与增量保留小数，不再截断为整数。
+    /// </summary>
+    [Test]
+    public void GetCurrentRangeKeepsFractionalResult()
+    {
+        _attacker.RuntimeData.CurrentRangeMultipler = 1.5f;
+        _attacker.RuntimeData.CurrentRangeIncrement = 0.25f;
+
+        Assert.That(_attacker.RuntimeData.GetCurrentRange(_attacker.BaseData.Range),
+            Is.EqualTo(7.75f).Within(0.0001f));
+    }
+
+    /// <summary>
+    /// 验证浮点射程按棋盘距离精确判定，允许 3.5 射程命中 3.4 距离目标。
+    /// </summary>
+    [Test]
+    public void FractionalRangeHitsTargetInsideExactDistance()
+    {
+        _attacker = new ChessController(CreateConfig(100, 12, 3.5f, 2, 0f));
+        _attacker.RuntimeData.CurrentPosition = Vector2.zero;
+        _target.RuntimeData.CurrentPosition = new Vector2(3.4f, 0f);
+        SelectTarget(_attacker, _target);
+
+        _attacker.AttackController.Tick(0f);
+
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
+    }
+
+    /// <summary>
+    /// 验证浮点射程不会把略超出距离的目标当作可攻击目标。
+    /// </summary>
+    [Test]
+    public void FractionalRangeDoesNotHitTargetOutsideExactDistance()
+    {
+        _attacker = new ChessController(CreateConfig(100, 12, 3.5f, 2, 0f));
+        _attacker.RuntimeData.CurrentPosition = Vector2.zero;
+        _target.RuntimeData.CurrentPosition = new Vector2(3.6f, 0f);
+        SelectTarget(_attacker, _target);
+
+        _attacker.AttackController.Tick(0f);
+
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
+        Assert.That(_attacker.AttackController.IsAttackInProgress, Is.False);
     }
 
     /// <summary>
@@ -324,7 +370,7 @@ public class AttackControllerTests
     [TestCase(2, -1, 0.5f)]
     [TestCase(2, 5, -1f)]
     [TestCase(0, 5, 0.5f)]
-    public void InvalidAttackConfigurationDisablesAttack(int atkSpeed, int range, float windUpTime)
+    public void InvalidAttackConfigurationDisablesAttack(int atkSpeed, float range, float windUpTime)
     {
         _attacker = new ChessController(CreateConfig(100, 12, range, atkSpeed, windUpTime));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
@@ -352,7 +398,7 @@ public class AttackControllerTests
     private static ChessBaseData CreateConfig(
         int maxHp,
         int atk,
-        int range,
+        float range,
         float atkSpeed,
         float windUpTime,
         float bulletSpeed = 0f)

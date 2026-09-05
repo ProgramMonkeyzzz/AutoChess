@@ -12,7 +12,8 @@ namespace Config
         public string Name;
         public int MaxHp;
         public int Atk;
-        public int Range;
+        /// <summary>棋子的基础攻击射程，使用棋盘 XZ 平面距离。</summary>
+        public float Range;
         /// <summary>棋子的基础移动速度。</summary>
         public float MoveSpeed;
 
