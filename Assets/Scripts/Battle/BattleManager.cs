@@ -6,6 +6,7 @@ using AutoChess.Bullet;
 using AutoChess.Navigation;
 using AutoChess.Render;
 using AutoChess.Utils;
+using BehaviorTree;
 using Camp;
 using Chess;
 using Config;
@@ -30,6 +31,9 @@ namespace AutoChess
         /// <summary>获取棋子配置仓库。</summary>
         public ChessConfigRepository Configs => _configs;
 
+        /// <summary>获取行为树定义仓库。</summary>
+        public BehaviorTreeRepository BehaviorTrees => _behaviorTrees;
+
         /// <summary>战斗固定步长。</summary>
         public float FixedStep { get; }
 
@@ -38,6 +42,8 @@ namespace AutoChess
 
         private readonly CampManager _campManager;
         private readonly ChessConfigRepository _configs;
+        /// <summary>按名称索引的行为树定义仓库。</summary>
+        private readonly BehaviorTreeRepository _behaviorTrees;
         private readonly ChessBoard _chessBoard;
         private readonly BulletManager _bulletManager;
         private readonly ConcurrentQueue<Action> _commands = new ConcurrentQueue<Action>();
@@ -65,8 +71,11 @@ namespace AutoChess
         {
         }
 
-        /// <summary>创建战斗管理器并注入棋子配置仓库；空仓库不从 Resources 加载。</summary>
-        public BattleManager(float fixedStep, ChessConfigRepository configs)
+        /// <summary>创建战斗管理器并注入棋子配置与行为树仓库；空仓库不从 Resources 加载。</summary>
+        public BattleManager(
+            float fixedStep,
+            ChessConfigRepository configs,
+            BehaviorTreeRepository behaviorTrees = null)
         {
             if (fixedStep <= 0f || float.IsNaN(fixedStep) || float.IsInfinity(fixedStep))
             {
@@ -75,7 +84,8 @@ namespace AutoChess
 
             FixedStep = fixedStep;
             _configs = configs ?? new ChessConfigRepository();
-            _campManager = new CampManager(_configs);
+            _behaviorTrees = behaviorTrees ?? new BehaviorTreeRepository();
+            _campManager = new CampManager(_configs, _behaviorTrees);
             _chessBoard = new ChessBoard();
             _bulletManager = new BulletManager();
         }

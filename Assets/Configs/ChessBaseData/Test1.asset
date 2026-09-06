@@ -13,11 +13,20 @@ MonoBehaviour:
   m_Name: Test1
   m_EditorClassIdentifier: 
   ConfigId: 1
-  Name: 
-  MaxHp: 200
-  Atk: 2
-  Range: 2
-  MoveSpeed: 2
+  Name: "\u8FDC\u7A0B"
+  MaxHp: 50
+  Atk: 30
+  Range: 3
+  MoveSpeed: 10
   AtkSpeed: 2
   WindUpTime: 1
   BulletSpeed: 0
+  MovementEnterBehaviorTree: 
+  MovementStayBehaviorTree: ChessCombat
+  MovementExitBehaviorTree: 
+  AttackEnterBehaviorTree: 
+  AttackStayBehaviorTree: 
+  AttackExitBehaviorTree: 
+  DeadEnterBehaviorTree: 
+  DeadStayBehaviorTree: 
+  DeadExitBehaviorTree: 

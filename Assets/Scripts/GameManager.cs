@@ -61,7 +61,7 @@ namespace AutoChess
         /// <summary>获取渲染管理器。</summary>
         public RenderManager RenderManager { get; private set; }
 
-        /// <summary>Unity 生命周期加载棋子配置并初始化战斗、导航和固定步时钟。</summary>
+        /// <summary>Unity 生命周期加载棋子配置与行为树并初始化战斗、导航和固定步时钟。</summary>
         private void Awake()
         {
             if (_instance != null && _instance != this)
@@ -76,6 +76,7 @@ namespace AutoChess
             DontDestroyOnLoad(gameObject);
             BattleManager = new BattleManager(DefaultFixedStep);
             BattleManager.Configs.LoadFromResources();
+            BattleManager.BehaviorTrees.LoadFromResources();
             NavigationManager = new NavigationManager(BattleManager.ChessBoard);
             RenderManager = new RenderManager(transform);
             BattleManager.Start();

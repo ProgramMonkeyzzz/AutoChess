@@ -60,14 +60,17 @@ public class ChessConfigRepositoryTests
     {
         var repo = new ChessConfigRepository();
         ChessBaseData source = CreateConfig(7, "Clone", 30);
+        source.MovementStayBehaviorTree = "ChessCombat";
         repo.Register(source);
         source.MaxHp = 99;
         source.Name = "Mutated";
+        source.MovementStayBehaviorTree = "Changed";
 
         Assert.That(repo.TryGet(7, out ChessBaseData stored), Is.True);
         Assert.That(stored, Is.Not.SameAs(source));
         Assert.That(stored.MaxHp, Is.EqualTo(30));
         Assert.That(stored.Name, Is.EqualTo("Clone"));
+        Assert.That(stored.MovementStayBehaviorTree, Is.EqualTo("ChessCombat"));
     }
 
     /// <summary>验证空资源路径会被拒绝。</summary>
@@ -94,6 +97,7 @@ public class ChessConfigRepositoryTests
         Assert.That(repo.TryGet(0, out ChessBaseData zero), Is.True);
         Assert.That(zero.Name, Is.EqualTo("LoadedZero"));
         Assert.That(zero.MaxHp, Is.EqualTo(11));
+        Assert.That(zero.MovementStayBehaviorTree, Is.EqualTo("StayTree"));
         Assert.That(repo.TryGet(4, out ChessBaseData four), Is.True);
         Assert.That(four.Name, Is.EqualTo("LoadedFour"));
         Assert.That(four.MaxHp, Is.EqualTo(22));
@@ -112,7 +116,8 @@ public class ChessConfigRepositoryTests
             MoveSpeed = 1f,
             AtkSpeed = 1f,
             WindUpTime = 0.1f,
-            BulletSpeed = 0f
+            BulletSpeed = 0f,
+            MovementStayBehaviorTree = name == "LoadedZero" ? "StayTree" : null
         };
     }
 

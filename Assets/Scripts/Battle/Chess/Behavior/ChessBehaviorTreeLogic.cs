@@ -119,6 +119,38 @@ namespace Chess.Behavior
             registry.RegisterAction(SelectTarget, data => new SelectTargetAction(ReadSelectTargetMode(data)));
         }
 
+        /// <summary>棋子运行时共享的 LogicId 注册表。</summary>
+        private static readonly object RuntimeRegistryLock = new object();
+
+        /// <summary>已绑定棋子 Action/Conditional 工厂的共享注册表。</summary>
+        private static BehaviorTreeRegistry _runtimeRegistry;
+
+        /// <summary>使用棋子 LogicId 注册表和独立黑板创建行为树运行器。</summary>
+        public static BehaviorTreeRunner CreateRunner(BehaviorTreeDefinition definition, ChessController owner)
+        {
+            if (definition == null)
+            {
+                throw new ArgumentNullException(nameof(definition));
+            }
+
+            return new BehaviorTreeRunner(definition, GetOrCreateRuntimeRegistry(), new Blackboard(), owner);
+        }
+
+        /// <summary>获取已注册棋子 Action/Conditional 的共享运行时表。</summary>
+        private static BehaviorTreeRegistry GetOrCreateRuntimeRegistry()
+        {
+            lock (RuntimeRegistryLock)
+            {
+                if (_runtimeRegistry == null)
+                {
+                    _runtimeRegistry = new BehaviorTreeRegistry();
+                    Register(_runtimeRegistry);
+                }
+
+                return _runtimeRegistry;
+            }
+        }
+
         /// <summary>
         /// 从 Action 参数读取索敌方式；缺参或无法解析时使用最近敌人。
         /// </summary>

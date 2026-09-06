@@ -3,7 +3,10 @@ using System.Threading;
 using AutoChess;
 using AutoChess.Navigation;
 using AutoChess.Render;
+using AutoChess.Utils;
+using BehaviorTree;
 using Camp;
+using Chess.Behavior;
 using Chess.FSM;
 using Chess.FSM.State;
 using Config;
@@ -56,7 +59,7 @@ namespace Chess
         /// <summary>
         /// 创建棋子控制器，并准备运行时可变数据。
         /// </summary>
-        public ChessController() : this(null)
+        public ChessController() : this((ChessBaseData)null)
         {
         }
 
@@ -64,12 +67,30 @@ namespace Chess
         /// 创建绑定静态配置的棋子控制器，并初始化运行时战斗数据。
         /// </summary>
         public ChessController(ChessBaseData baseData)
-            : this(AllocateUniqueId(), baseData)
+            : this(baseData, null)
         {
+        }
+
+        /// <summary>
+        /// 创建绑定静态配置的棋子控制器，并按仓库部署状态行为树。
+        /// </summary>
+        public ChessController(ChessBaseData baseData, BehaviorTreeRepository behaviorTrees)
+            : this(AllocateUniqueId(), baseData, behaviorTrees)
+        {
+            _fsm.Start<MovementState>();
         }
 
         /// <summary>使用预先分配的 UniqueId 创建棋子，供阵营工厂使用。</summary>
         internal ChessController(int uniqueId, ChessBaseData baseData)
+            : this(uniqueId, baseData, null)
+        {
+        }
+
+        /// <summary>使用预先分配的 UniqueId 和可选行为树仓库创建棋子，不启动 FSM。</summary>
+        internal ChessController(
+            int uniqueId,
+            ChessBaseData baseData,
+            BehaviorTreeRepository behaviorTrees)
         {
             if (uniqueId <= 0)
             {
@@ -94,16 +115,55 @@ namespace Chess
             _chessDamageReceiver = new ChessDamageReceiver(this);
             _attackController = new AttackController(this);
 
-            // 先注册状态和转换，再启动默认的 MovementState。
+            // 先按配置部署状态行为树并注册转换；公开构造函数随后启动 MovementState。
             _fsm = new FSM.FSM(this);
-            _fsm.AddState(new MovementState(_fsm));
-            _fsm.AddState(new AttackState(_fsm));
-            _fsm.AddState(new DeadState(_fsm));
+            _fsm.AddState(new MovementState(
+                _fsm,
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.MovementEnterBehaviorTree),
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.MovementStayBehaviorTree),
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.MovementExitBehaviorTree)));
+            _fsm.AddState(new AttackState(
+                _fsm,
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.AttackEnterBehaviorTree),
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.AttackStayBehaviorTree),
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.AttackExitBehaviorTree)));
+            _fsm.AddState(new DeadState(
+                _fsm,
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.DeadEnterBehaviorTree),
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.DeadStayBehaviorTree),
+                CreateStateBehaviorTree(behaviorTrees, _chessBaseData == null ? null : _chessBaseData.DeadExitBehaviorTree)));
             _fsm.AddTransition(new MovementToAttackTransition(_fsm));
             _fsm.AddTransition(new MovementToDeadTransition(_fsm));
             _fsm.AddTransition(new AttackToMovementTransition(_fsm));
             _fsm.AddTransition(new AttackToDeadTransition(_fsm));
-            _fsm.Start<MovementState>();
+        }
+
+        /// <summary>按配置名创建状态生命周期行为树；空白不挂树，缺树或构建失败时记录错误并跳过。</summary>
+        private BehaviorTreeRunner CreateStateBehaviorTree(BehaviorTreeRepository behaviorTrees, string treeName)
+        {
+            if (string.IsNullOrWhiteSpace(treeName))
+            {
+                return null;
+            }
+
+            string name = treeName.Trim();
+            if (behaviorTrees == null || !behaviorTrees.TryGet(name, out BehaviorTreeDefinition definition) || definition == null)
+            {
+                ThreadLogQueue.Enqueue(ThreadLogLevel.Error, "ChessController 找不到行为树 '" + name + "'。");
+                return null;
+            }
+
+            try
+            {
+                return ChessBehaviorTreeLogic.CreateRunner(definition, this);
+            }
+            catch (Exception exception)
+            {
+                ThreadLogQueue.Enqueue(
+                    ThreadLogLevel.Error,
+                    "ChessController 构建行为树 '" + name + "' 失败: " + exception.Message);
+                return null;
+            }
         }
 
         /// <summary>分配下一个进程内唯一棋子 ID。</summary>

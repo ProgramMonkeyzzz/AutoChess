@@ -8,7 +8,7 @@ namespace AutoChess.Render
     public class ChessView : MonoBehaviour
     {
         [SerializeField] private Transform _chessTransform;
-        [SerializeField] private float _height = 0.5f;
+        [SerializeField] private float _height;
 
         /// <summary>用于阵营着色的材质实例，避免修改预制体共享材质。</summary>
         private Material _materialInstance;

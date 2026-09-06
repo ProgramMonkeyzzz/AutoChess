@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BehaviorTree;
 using Chess;
 using Config;
 using UnityEngine;
@@ -16,15 +17,21 @@ namespace Camp
         private readonly Dictionary<int, ChessController> _byUniqueId =
             new Dictionary<int, ChessController>();
         private readonly ChessConfigRepository _configs;
+        /// <summary>按名称索引的行为树定义仓库。</summary>
+        private readonly BehaviorTreeRepository _behaviorTrees;
 
-        /// <summary>创建阵营管理器并绑定棋子配置仓库。</summary>
-        public CampManager(ChessConfigRepository configs = null)
+        /// <summary>创建阵营管理器并绑定棋子配置与行为树仓库。</summary>
+        public CampManager(ChessConfigRepository configs = null, BehaviorTreeRepository behaviorTrees = null)
         {
             _configs = configs ?? new ChessConfigRepository();
+            _behaviorTrees = behaviorTrees ?? new BehaviorTreeRepository();
         }
 
         /// <summary>获取棋子配置仓库。</summary>
         public ChessConfigRepository Configs => _configs;
+
+        /// <summary>获取行为树定义仓库。</summary>
+        public BehaviorTreeRepository BehaviorTrees => _behaviorTrees;
 
         /// <summary>获取或创建指定阵营。</summary>
         public CampGroup GetOrCreateCamp(int campId)

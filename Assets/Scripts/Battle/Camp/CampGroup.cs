@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using AutoChess.Utils;
 using Chess;
+using Chess.FSM.State;
 using Config;
 using UnityEngine;
 
@@ -47,7 +48,10 @@ namespace Camp
                 return null;
             }
 
-            ChessController chess = new ChessController(uniqueId, source.Clone());
+            ChessController chess = new ChessController(
+                uniqueId,
+                source.Clone(),
+                _campManager == null ? null : _campManager.BehaviorTrees);
             if (chess.RuntimeData != null)
             {
                 chess.RuntimeData.CurrentPosition = position;
@@ -60,7 +64,9 @@ namespace Camp
             }
 
             chessSet.Add(chess);
+            // 先写入阵营上下文，再启动默认 MovementState，让 Enter 行为树能读到阵营。
             chess.SetCampContext(_campId, configId, this);
+            chess.Fsm.Start<MovementState>();
             return chess;
         }
 

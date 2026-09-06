@@ -158,6 +158,12 @@ namespace Chess.FSM
             _currentState.OnStateStay(deltaTime);
         }
 
+        /// <summary>按类型读取已注册状态。</summary>
+        public TState GetState<TState>() where TState : StateBase
+        {
+            return (TState)GetRegisteredState(typeof(TState));
+        }
+
         /// <summary>
         /// 按类型读取已注册状态，未注册时抛出异常。
         /// </summary>

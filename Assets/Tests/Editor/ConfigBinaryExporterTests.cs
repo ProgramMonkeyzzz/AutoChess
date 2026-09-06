@@ -34,6 +34,15 @@ public class ConfigBinaryExporterTests
         source.AtkSpeed = 2.5f;
         source.WindUpTime = 0.75f;
         source.BulletSpeed = 6.5f;
+        source.MovementEnterBehaviorTree = "MoveEnter";
+        source.MovementStayBehaviorTree = "ChessCombat";
+        source.MovementExitBehaviorTree = "MoveExit";
+        source.AttackEnterBehaviorTree = "AtkEnter";
+        source.AttackStayBehaviorTree = "AtkStay";
+        source.AttackExitBehaviorTree = "AtkExit";
+        source.DeadEnterBehaviorTree = "DeadEnter";
+        source.DeadStayBehaviorTree = "DeadStay";
+        source.DeadExitBehaviorTree = "DeadExit";
         AssetDatabase.CreateAsset(source, SourceAssetPath);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
@@ -65,6 +74,15 @@ public class ConfigBinaryExporterTests
         Assert.That(data.AtkSpeed, Is.EqualTo(2.5f));
         Assert.That(data.WindUpTime, Is.EqualTo(0.75f));
         Assert.That(data.BulletSpeed, Is.EqualTo(6.5f));
+        Assert.That(data.MovementEnterBehaviorTree, Is.EqualTo("MoveEnter"));
+        Assert.That(data.MovementStayBehaviorTree, Is.EqualTo("ChessCombat"));
+        Assert.That(data.MovementExitBehaviorTree, Is.EqualTo("MoveExit"));
+        Assert.That(data.AttackEnterBehaviorTree, Is.EqualTo("AtkEnter"));
+        Assert.That(data.AttackStayBehaviorTree, Is.EqualTo("AtkStay"));
+        Assert.That(data.AttackExitBehaviorTree, Is.EqualTo("AtkExit"));
+        Assert.That(data.DeadEnterBehaviorTree, Is.EqualTo("DeadEnter"));
+        Assert.That(data.DeadStayBehaviorTree, Is.EqualTo("DeadStay"));
+        Assert.That(data.DeadExitBehaviorTree, Is.EqualTo("DeadExit"));
     }
 
     [Test]

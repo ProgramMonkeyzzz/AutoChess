@@ -26,6 +26,33 @@ namespace Config
         /// <summary>子弹在棋盘 XZ 平面上的移动速度；非正数表示即时伤害。</summary>
         public float BulletSpeed;
 
+        /// <summary>Movement 状态 Enter 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string MovementEnterBehaviorTree;
+
+        /// <summary>Movement 状态 Stay 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string MovementStayBehaviorTree;
+
+        /// <summary>Movement 状态 Exit 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string MovementExitBehaviorTree;
+
+        /// <summary>Attack 状态 Enter 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string AttackEnterBehaviorTree;
+
+        /// <summary>Attack 状态 Stay 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string AttackStayBehaviorTree;
+
+        /// <summary>Attack 状态 Exit 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string AttackExitBehaviorTree;
+
+        /// <summary>Dead 状态 Enter 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string DeadEnterBehaviorTree;
+
+        /// <summary>Dead 状态 Stay 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string DeadStayBehaviorTree;
+
+        /// <summary>Dead 状态 Exit 行为树名，对应 Resources/Configs/BehaviorTrees 下的配置名（不含扩展名）；空白表示不挂树。</summary>
+        public string DeadExitBehaviorTree;
+
         /// <summary>复制一份静态配置，避免多个棋子实例共享可变数据。</summary>
         public ChessBaseData Clone()
         {
@@ -39,7 +66,16 @@ namespace Config
                 MoveSpeed = MoveSpeed,
                 AtkSpeed = AtkSpeed,
                 WindUpTime = WindUpTime,
-                BulletSpeed = BulletSpeed
+                BulletSpeed = BulletSpeed,
+                MovementEnterBehaviorTree = MovementEnterBehaviorTree,
+                MovementStayBehaviorTree = MovementStayBehaviorTree,
+                MovementExitBehaviorTree = MovementExitBehaviorTree,
+                AttackEnterBehaviorTree = AttackEnterBehaviorTree,
+                AttackStayBehaviorTree = AttackStayBehaviorTree,
+                AttackExitBehaviorTree = AttackExitBehaviorTree,
+                DeadEnterBehaviorTree = DeadEnterBehaviorTree,
+                DeadStayBehaviorTree = DeadStayBehaviorTree,
+                DeadExitBehaviorTree = DeadExitBehaviorTree
             };
         }
     }

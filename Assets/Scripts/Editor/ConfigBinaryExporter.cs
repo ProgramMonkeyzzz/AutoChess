@@ -110,7 +110,16 @@ namespace AutoChess.Editor
                 MoveSpeed = source.MoveSpeed,
                 AtkSpeed = source.AtkSpeed,
                 WindUpTime = source.WindUpTime,
-                BulletSpeed = source.BulletSpeed
+                BulletSpeed = source.BulletSpeed,
+                MovementEnterBehaviorTree = source.MovementEnterBehaviorTree,
+                MovementStayBehaviorTree = source.MovementStayBehaviorTree,
+                MovementExitBehaviorTree = source.MovementExitBehaviorTree,
+                AttackEnterBehaviorTree = source.AttackEnterBehaviorTree,
+                AttackStayBehaviorTree = source.AttackStayBehaviorTree,
+                AttackExitBehaviorTree = source.AttackExitBehaviorTree,
+                DeadEnterBehaviorTree = source.DeadEnterBehaviorTree,
+                DeadStayBehaviorTree = source.DeadStayBehaviorTree,
+                DeadExitBehaviorTree = source.DeadExitBehaviorTree
             };
         }
 
