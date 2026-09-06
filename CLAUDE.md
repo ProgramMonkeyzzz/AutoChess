@@ -90,7 +90,7 @@
 - **AttackState**: 攻击状态，进入时停止移动，退出时取消攻击前摇并保留已有攻击冷却
 - **DeadState**: 棋子 HP 归零后的终止状态，进入时停止并清理移动命令，不注册返回 `MovementState` 的转换
 - **MovementToDeadTransition**: 当棋子运行时 HP 小于等于零时允许从 `MovementState` 切换到 `DeadState`
-- **MovementToAttackTransition** / **AttackToMovementTransition** / **AttackToDeadTransition**: 管理攻击开始、移动中断和死亡条件下的状态切换
+- **MovementToAttackTransition** / **AttackToMovementTransition** / **AttackToDeadTransition**: 管理攻击开始、移动中断、前摇结束回切和死亡条件下的状态切换
 
 使用约定：
 
@@ -168,7 +168,7 @@
   - `CampManagerTests` 覆盖工厂注册、出生点写入、按 `ConfigId` 分组、按 `UniqueId` 索引，以及 `AgentId` 相同后再按 `UniqueId` 的稳定排序
   - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先、重复/跨实例注册校验，以及状态行为树的阶段顺序、时间步、重入和取消
   - `ChessMovementControllerTests` 覆盖移动命令、远离目标刷新/贴边、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
-  - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、攻击冷却、移动中不自动起手、跨阶段时间步、目标失效取消及缴械配置
+  - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
   - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建和 BattleManager 帧发布
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
@@ -248,7 +248,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - `ChessController.Tick()` 会按 FSM、移动、攻击顺序更新；也可调用 `Tick(float deltaTime)` 精确推进攻击时间
 - 攻击伤害取攻击方 `ChessBaseData.Atk`，首次满足目标、射程且当前未在移动时自动开始前摇；`AttackTarget()` 可在移动中强制起手。前摇锁定后目标离开射程仍会完成攻击，命中后才开始下一次攻击冷却
 - 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止移动，退出取消前摇并保留冷却
-- 攻击状态下成功移动命令立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
+- 攻击状态下成功移动命令或不在前摇期间立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
 - `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
 - 子弹在创建时快照攻击者当前攻击力，飞行期间攻击力变化不影响命中伤害
 - 子弹命中后必须从活动集合移除并归还 `ObjectPool`，不得重复结算或重复回收

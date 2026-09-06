@@ -95,7 +95,7 @@ namespace Chess.FSM
     }
 
     /// <summary>
-    /// 攻击状态下出现有效移动命令时切换回移动状态。
+    /// 攻击状态下出现有效移动命令，或当前不在攻击前摇期间时，切换回移动状态。
     /// </summary>
     public sealed class AttackToMovementTransition : StateTransition<AttackState, MovementState>
     {
@@ -107,14 +107,24 @@ namespace Chess.FSM
         }
 
         /// <summary>
-        /// 当移动控制器存在有效移动命令时允许切换。
+        /// 当存在有效移动命令，或攻击控制器当前不在前摇期间时允许切换。
         /// </summary>
         public override bool CanTransition()
         {
-            return _fsm.ChessController.RuntimeData != null
-                   && _fsm.ChessController.RuntimeData.Hp > 0
-                   && _fsm.ChessController.MovementController != null
-                   && _fsm.ChessController.MovementController.HasDestination;
+            if (_fsm.ChessController.RuntimeData == null
+                || _fsm.ChessController.RuntimeData.Hp <= 0)
+            {
+                return false;
+            }
+
+            if (_fsm.ChessController.MovementController != null
+                && _fsm.ChessController.MovementController.HasDestination)
+            {
+                return true;
+            }
+
+            return _fsm.ChessController.AttackController == null
+                   || !_fsm.ChessController.AttackController.IsWindingUp;
         }
     }
 

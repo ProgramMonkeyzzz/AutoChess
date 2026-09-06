@@ -126,6 +126,41 @@ public class AttackControllerTests
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
         Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
         Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0.5f).Within(0.0001f));
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
+    }
+
+    /// <summary>
+    /// 验证前摇结束后即使没有移动命令也会切回移动状态。
+    /// </summary>
+    [Test]
+    public void FinishingWindUpWithoutMoveCommandReturnsToMovementState()
+    {
+        _attacker.Tick(0f);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
+
+        _attacker.Tick(0.5f);
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0.5f).Within(0.0001f));
+    }
+
+    /// <summary>
+    /// 验证前摇被取消后，下一次 Tick 会切回移动状态。
+    /// </summary>
+    [Test]
+    public void CancelledWindUpReturnsToMovementStateOnNextTick()
+    {
+        _attacker.Tick(0f);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+
+        SelectTarget(_attacker, null);
+        _attacker.Tick(0f);
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        _attacker.Tick(0f);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
     /// <summary>
@@ -168,16 +203,20 @@ public class AttackControllerTests
     {
         _attacker.Tick(0.5f);
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
 
         _attacker.Tick(0.49f);
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
         Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
 
         _attacker.Tick(0.01f);
         Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
 
         _attacker.Tick(0.5f);
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(76));
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
     /// <summary>
@@ -280,6 +319,8 @@ public class AttackControllerTests
         _attacker.Tick(0f);
 
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(88));
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
     /// <summary>
