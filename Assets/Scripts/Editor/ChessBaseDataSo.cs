@@ -1,11 +1,14 @@
-﻿using UnityEngine;
+using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace Editor
 {
     [CreateAssetMenu(menuName = "Chess/ChessBaseData")]
     public class ChessBaseDataSo : ScriptableObject
     {
-        public int ChessId;
+        /// <summary>棋子静态配置 ID。</summary>
+        [FormerlySerializedAs("ChessId")]
+        public int ConfigId;
         public string Name;
         public int MaxHp;
         public int Atk;

@@ -42,12 +42,12 @@ public class RenderManagerTests
 
     /// <summary>验证棋子实例 ID 从 1 起单调递增。</summary>
     [Test]
-    public void ChessInstanceIdsAreMonotonic()
+    public void ChessUniqueIdsAreMonotonic()
     {
         var first = new ChessController();
         var second = new ChessController();
-        Assert.That(first.InstanceId, Is.GreaterThan(0));
-        Assert.That(second.InstanceId, Is.GreaterThan(first.InstanceId));
+        Assert.That(first.UniqueId, Is.GreaterThan(0));
+        Assert.That(second.UniqueId, Is.GreaterThan(first.UniqueId));
     }
 
     /// <summary>验证子弹初始化分配新 ID，回收后再初始化使用更大的 ID。</summary>
@@ -125,7 +125,7 @@ public class RenderManagerTests
         Assert.That(_renderManager.TryGetBulletView(9, out _), Is.False);
     }
 
-    /// <summary>验证同一 InstanceId 重复创建不会实例化第二份视图。</summary>
+    /// <summary>验证同一 UniqueId 重复创建不会实例化第二份视图。</summary>
     [Test]
     public void CreateChessViewIsIdempotent()
     {
@@ -197,15 +197,15 @@ public class BattleRenderSnapshotTests
     {
         using (var manager = new BattleManager())
         {
-            var chess = new ChessController(CreateConfig(50));
-            chess.RuntimeData.CurrentPosition = new Vector2(5f, 7f);
-            manager.RegisterChess(1, 1, chess);
+            manager.Configs.Register(CreateConfig(1, 50));
+            int uniqueId = manager.RegisterChess(1, 1, new Vector2(5f, 7f));
+            Assert.That(manager.TryGetChess(uniqueId, out ChessController chess), Is.True);
             manager.Start();
             manager.RequestAdvance(1);
 
             BattleRenderFrame frame = WaitForFrame(manager);
             Assert.That(frame.Chess.Length, Is.EqualTo(1));
-            Assert.That(frame.Chess[0].InstanceId, Is.EqualTo(chess.InstanceId));
+            Assert.That(frame.Chess[0].UniqueId, Is.EqualTo(uniqueId));
             Assert.That(frame.Chess[0].CampId, Is.EqualTo(1));
             Assert.That(frame.Chess[0].Position, Is.EqualTo(new Vector2(5f, 7f)));
             Assert.That(frame.Bullets, Is.Empty);
@@ -218,12 +218,12 @@ public class BattleRenderSnapshotTests
     {
         using (var manager = new BattleManager())
         {
-            var owner = new ChessController(CreateConfig(10));
-            var target = new ChessController(CreateConfig(10));
-            owner.RuntimeData.CurrentPosition = Vector2.zero;
-            target.RuntimeData.CurrentPosition = new Vector2(3f, 0f);
-            manager.RegisterChess(1, 1, owner);
-            manager.RegisterChess(2, 2, target);
+            manager.Configs.Register(CreateConfig(1, 10));
+            manager.Configs.Register(CreateConfig(2, 10));
+            int ownerId = manager.RegisterChess(1, 1, Vector2.zero);
+            int targetId = manager.RegisterChess(2, 2, new Vector2(3f, 0f));
+            Assert.That(manager.TryGetChess(ownerId, out ChessController owner), Is.True);
+            Assert.That(manager.TryGetChess(targetId, out ChessController target), Is.True);
             Assert.That(manager.BulletManager.RegisterBullet(owner, target, 10f), Is.Not.Null);
             owner.DamageReceiver.ApplyDamage(10);
             Assert.That(owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
@@ -233,7 +233,7 @@ public class BattleRenderSnapshotTests
 
             BattleRenderFrame frame = WaitForFrame(manager);
             Assert.That(frame.Chess.Length, Is.EqualTo(1));
-            Assert.That(frame.Chess[0].InstanceId, Is.EqualTo(target.InstanceId));
+            Assert.That(frame.Chess[0].UniqueId, Is.EqualTo(targetId));
             Assert.That(frame.Bullets.Length, Is.EqualTo(1));
 
             for (int i = 0; i < 10; i++)
@@ -249,7 +249,7 @@ public class BattleRenderSnapshotTests
             Assert.That(frame.Bullets, Is.Empty);
             foreach (ChessRenderSnapshot snapshot in frame.Chess)
             {
-                Assert.That(snapshot.InstanceId, Is.Not.EqualTo(owner.InstanceId));
+                Assert.That(snapshot.UniqueId, Is.Not.EqualTo(ownerId));
             }
         }
     }
@@ -270,10 +270,11 @@ public class BattleRenderSnapshotTests
         return null;
     }
 
-    private static ChessBaseData CreateConfig(int maxHp)
+    private static ChessBaseData CreateConfig(int configId, int maxHp)
     {
         return new ChessBaseData
         {
+            ConfigId = configId,
             MaxHp = maxHp,
             Atk = 1,
             Range = 10,

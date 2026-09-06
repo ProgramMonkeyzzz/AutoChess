@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 75dc4b144cb14476b9bf255058454871, type: 3}
   m_Name: Test1
   m_EditorClassIdentifier: 
-  ChessId: 1
+  ConfigId: 1
   Name: 
   MaxHp: 200
   Atk: 2

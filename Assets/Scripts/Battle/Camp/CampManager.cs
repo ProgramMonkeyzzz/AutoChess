@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Chess;
+using Config;
+using UnityEngine;
 
 namespace Camp
 {
@@ -10,6 +12,19 @@ namespace Camp
     public class CampManager
     {
         private readonly Dictionary<int, CampGroup> _campDict = new Dictionary<int, CampGroup>();
+        /// <summary>按 UniqueId 索引的棋子实例。</summary>
+        private readonly Dictionary<int, ChessController> _byUniqueId =
+            new Dictionary<int, ChessController>();
+        private readonly ChessConfigRepository _configs;
+
+        /// <summary>创建阵营管理器并绑定棋子配置仓库。</summary>
+        public CampManager(ChessConfigRepository configs = null)
+        {
+            _configs = configs ?? new ChessConfigRepository();
+        }
+
+        /// <summary>获取棋子配置仓库。</summary>
+        public ChessConfigRepository Configs => _configs;
 
         /// <summary>获取或创建指定阵营。</summary>
         public CampGroup GetOrCreateCamp(int campId)
@@ -23,15 +38,50 @@ namespace Camp
             return group;
         }
 
-        /// <summary>将棋子注册到指定阵营和配置 ID 的分组。</summary>
-        public void RegisterChess(int campId, int chessId, ChessController chess)
+        /// <summary>按 ConfigId 创建棋子并分配 UniqueId，供测试直接调用。</summary>
+        public ChessController RegisterChess(int campId, int configId, Vector2 position)
         {
-            if (chess == null)
+            return RegisterChess(campId, configId, ChessController.AllocateUniqueId(), position);
+        }
+
+        /// <summary>使用预分配 UniqueId 按 ConfigId 创建棋子并写入出生点。</summary>
+        public ChessController RegisterChess(int campId, int configId, int uniqueId, Vector2 position)
+        {
+            if (uniqueId <= 0)
             {
-                throw new ArgumentNullException(nameof(chess));
+                throw new ArgumentOutOfRangeException(nameof(uniqueId));
             }
 
-            GetOrCreateCamp(campId).RegisterChess(chessId, chess);
+            if (_byUniqueId.ContainsKey(uniqueId))
+            {
+                throw new InvalidOperationException("UniqueId " + uniqueId + " 已存在。");
+            }
+
+            ChessController chess = GetOrCreateCamp(campId).RegisterChess(configId, uniqueId, position);
+            if (chess == null)
+            {
+                return null;
+            }
+
+            _byUniqueId[uniqueId] = chess;
+            return chess;
+        }
+
+        /// <summary>按 UniqueId 查找棋子实例。</summary>
+        public bool TryGetChess(int uniqueId, out ChessController chess)
+        {
+            return _byUniqueId.TryGetValue(uniqueId, out chess) && chess != null;
+        }
+
+        /// <summary>按 UniqueId 注销棋子。</summary>
+        public bool UnregisterChess(int uniqueId)
+        {
+            if (!_byUniqueId.TryGetValue(uniqueId, out ChessController chess))
+            {
+                return false;
+            }
+
+            return UnregisterChess(chess);
         }
 
         /// <summary>从所有阵营中注销指定棋子。</summary>
@@ -42,15 +92,22 @@ namespace Camp
                 return false;
             }
 
+            bool removed = false;
             foreach (CampGroup group in _campDict.Values)
             {
                 if (group.UnregisterChess(chess))
                 {
-                    return true;
+                    removed = true;
+                    break;
                 }
             }
 
-            return false;
+            if (removed)
+            {
+                _byUniqueId.Remove(chess.UniqueId);
+            }
+
+            return removed;
         }
 
         /// <summary>按稳定阵营顺序推进全部棋子战斗逻辑。</summary>
@@ -93,13 +150,20 @@ namespace Camp
             return result;
         }
 
-        /// <summary>按导航代理 ID 对棋子进行稳定排序。</summary>
+        /// <summary>按导航代理 ID，相等时再按 UniqueId 对棋子进行稳定排序。</summary>
         private static int CompareChess(ChessController left, ChessController right)
         {
             int leftId = left?.MovementController?.Agent.AgentId ?? int.MaxValue;
             int rightId = right?.MovementController?.Agent.AgentId ?? int.MaxValue;
             int compare = leftId.CompareTo(rightId);
-            return compare != 0 ? compare : (left?.ChessId ?? int.MaxValue).CompareTo(right?.ChessId ?? int.MaxValue);
+            if (compare != 0)
+            {
+                return compare;
+            }
+
+            int leftUniqueId = left == null ? int.MaxValue : left.UniqueId;
+            int rightUniqueId = right == null ? int.MaxValue : right.UniqueId;
+            return leftUniqueId.CompareTo(rightUniqueId);
         }
     }
 }

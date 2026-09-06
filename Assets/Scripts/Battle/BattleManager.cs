@@ -8,6 +8,8 @@ using AutoChess.Render;
 using AutoChess.Utils;
 using Camp;
 using Chess;
+using Config;
+using UnityEngine;
 
 namespace AutoChess
 {
@@ -25,6 +27,9 @@ namespace AutoChess
         /// <summary>获取子弹管理器。</summary>
         public BulletManager BulletManager => _bulletManager;
 
+        /// <summary>获取棋子配置仓库。</summary>
+        public ChessConfigRepository Configs => _configs;
+
         /// <summary>战斗固定步长。</summary>
         public float FixedStep { get; }
 
@@ -32,6 +37,7 @@ namespace AutoChess
         public bool IsRunning => _worker != null && _worker.IsAlive;
 
         private readonly CampManager _campManager;
+        private readonly ChessConfigRepository _configs;
         private readonly ChessBoard _chessBoard;
         private readonly BulletManager _bulletManager;
         private readonly ConcurrentQueue<Action> _commands = new ConcurrentQueue<Action>();
@@ -55,6 +61,12 @@ namespace AutoChess
 
         /// <summary>创建战斗管理器及其战斗子系统。</summary>
         public BattleManager(float fixedStep = 1f / 60f)
+            : this(fixedStep, null)
+        {
+        }
+
+        /// <summary>创建战斗管理器并注入棋子配置仓库；空仓库不从 Resources 加载。</summary>
+        public BattleManager(float fixedStep, ChessConfigRepository configs)
         {
             if (fixedStep <= 0f || float.IsNaN(fixedStep) || float.IsInfinity(fixedStep))
             {
@@ -62,7 +74,8 @@ namespace AutoChess
             }
 
             FixedStep = fixedStep;
-            _campManager = new CampManager();
+            _configs = configs ?? new ChessConfigRepository();
+            _campManager = new CampManager(_configs);
             _chessBoard = new ChessBoard();
             _bulletManager = new BulletManager();
         }
@@ -131,40 +144,76 @@ namespace AutoChess
             }
         }
 
-        /// <summary>在线程安全命令队列中注册棋子。</summary>
-        public void RegisterChess(int campId, int chessId, ChessController chess)
+        /// <summary>按 ConfigId 在线程安全队列中创建棋子，立即返回 UniqueId。</summary>
+        public int RegisterChess(int campId, int configId, Vector2 position)
         {
-            if (chess == null)
-            {
-                throw new ArgumentNullException(nameof(chess));
-            }
-
-            EnqueueOrRun(() => _campManager.RegisterChess(campId, chessId, chess));
+            return RegisterChess(campId, configId, position, default);
         }
 
-        /// <summary>在线程内绑定导航句柄并将棋子注册到阵营。</summary>
-        public void RegisterChess(
+        /// <summary>按 ConfigId 创建棋子并绑定导航句柄。</summary>
+        public int RegisterChess(int campId, int configId, Vector2 position, NavigationAgentHandle agent)
+        {
+            if (!TryValidateConfig(configId))
+            {
+                return 0;
+            }
+
+            return RegisterChess(campId, configId, ChessController.AllocateUniqueId(), position, agent);
+        }
+
+        /// <summary>使用预分配 UniqueId 创建棋子，供 GameManager 立即建视图。</summary>
+        public int RegisterChess(
             int campId,
-            int chessId,
-            ChessController chess,
+            int configId,
+            int uniqueId,
+            Vector2 position,
             NavigationAgentHandle agent)
         {
-            if (chess == null)
+            if (uniqueId <= 0 || !TryValidateConfig(configId))
             {
-                throw new ArgumentNullException(nameof(chess));
+                return 0;
             }
 
             EnqueueOrRun(() =>
             {
-                chess.InitializeMovement(_chessBoard, agent);
-                _campManager.RegisterChess(campId, chessId, chess);
+                ChessController chess = _campManager.RegisterChess(campId, configId, uniqueId, position);
+                if (chess != null && agent.IsValid)
+                {
+                    chess.InitializeMovement(_chessBoard, agent);
+                }
             });
+            return uniqueId;
         }
 
-        /// <summary>在线程安全命令队列中注销棋子。</summary>
+        /// <summary>按 UniqueId 查找棋子；仅在未启动或战斗线程上安全。</summary>
+        public bool TryGetChess(int uniqueId, out ChessController chess)
+        {
+            return _campManager.TryGetChess(uniqueId, out chess);
+        }
+
+        /// <summary>按 UniqueId 在线程安全队列中注销棋子。</summary>
+        public void UnregisterChess(int uniqueId)
+        {
+            EnqueueOrRun(() => _campManager.UnregisterChess(uniqueId));
+        }
+
+        /// <summary>在线程安全队列中注销棋子。</summary>
         public void UnregisterChess(ChessController chess)
         {
             EnqueueOrRun(() => _campManager.UnregisterChess(chess));
+        }
+
+        /// <summary>校验 ConfigId 是否已注册，缺失时记录错误。</summary>
+        private bool TryValidateConfig(int configId)
+        {
+            if (_configs.TryGet(configId, out ChessBaseData data) && data != null)
+            {
+                return true;
+            }
+
+            ThreadLogQueue.Enqueue(ThreadLogLevel.Error,
+                "BattleManager 找不到 ConfigId=" + configId + " 的棋子配置。");
+            return false;
         }
 
         /// <summary>提交主线程 RVO 结果，供下一个战斗固定步消费。</summary>

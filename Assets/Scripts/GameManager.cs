@@ -5,6 +5,7 @@ using AutoChess.Navigation;
 using AutoChess.Render;
 using AutoChess.Utils;
 using Chess;
+using Config;
 using UnityEngine;
 
 namespace AutoChess
@@ -21,8 +22,9 @@ namespace AutoChess
         private static int _knownMainThreadId;
         private readonly Dictionary<long, List<NavigationInputSnapshot>> _inputBatches =
             new Dictionary<long, List<NavigationInputSnapshot>>();
-        private readonly Dictionary<ChessController, NavigationAgentHandle> _agentByChess =
-            new Dictionary<ChessController, NavigationAgentHandle>();
+        /// <summary>主线程按 UniqueId 记录的导航代理句柄。</summary>
+        private readonly Dictionary<int, NavigationAgentHandle> _agentByUniqueId =
+            new Dictionary<int, NavigationAgentHandle>();
         private float _timeAccumulator;
         private int _mainThreadId;
         private bool _initialized;
@@ -59,7 +61,7 @@ namespace AutoChess
         /// <summary>获取渲染管理器。</summary>
         public RenderManager RenderManager { get; private set; }
 
-        /// <summary>Unity 生命周期初始化战斗、导航和固定步时钟。</summary>
+        /// <summary>Unity 生命周期加载棋子配置并初始化战斗、导航和固定步时钟。</summary>
         private void Awake()
         {
             if (_instance != null && _instance != this)
@@ -73,6 +75,7 @@ namespace AutoChess
             _knownMainThreadId = _mainThreadId;
             DontDestroyOnLoad(gameObject);
             BattleManager = new BattleManager(DefaultFixedStep);
+            BattleManager.Configs.LoadFromResources();
             NavigationManager = new NavigationManager(BattleManager.ChessBoard);
             RenderManager = new RenderManager(transform);
             BattleManager.Start();
@@ -111,79 +114,75 @@ namespace AutoChess
             FlushThreadLogs();
         }
 
-        /// <summary>在主线程注册棋子导航代理并排队加入战斗阵营。</summary>
-        public NavigationAgentHandle RegisterChess(int campId, int chessId, ChessController chess)
+        /// <summary>在主线程按配置创建棋子导航代理、排队加入战斗并立刻创建视图。</summary>
+        public int RegisterChess(int campId, int configId, Vector2 position)
         {
             EnsureMainThread();
-            if (NavigationManager == null || BattleManager == null || chess == null)
+            if (NavigationManager == null || BattleManager == null)
             {
-                return NavigationAgentHandle.Invalid;
+                return 0;
             }
 
-            if (chess.RuntimeData == null)
+            if (!BattleManager.Configs.TryGet(configId, out ChessBaseData config) || config == null)
             {
-                return NavigationAgentHandle.Invalid;
+                Debug.LogError("GameManager 找不到 ConfigId=" + configId + " 的棋子配置。");
+                return 0;
             }
 
-            if (_agentByChess.TryGetValue(chess, out NavigationAgentHandle existing))
-            {
-                NavigationManager.UnregisterAgent(existing);
-                _agentByChess.Remove(chess);
-            }
-
-            float maxSpeed = chess.BaseData == null ? 0f : chess.BaseData.MoveSpeed;
             NavigationAgentHandle handle = NavigationManager.RegisterAgent(
-                chess.RuntimeData.CurrentPosition,
+                position,
                 new NavigationAgentConfig(
                     ChessMovementController.ChessRadius,
-                    maxSpeed,
+                    config.MoveSpeed,
                     2f,
                     0.5f,
                     10,
                     0.5f));
-            if (handle.IsValid)
+            if (!handle.IsValid)
             {
-                _agentByChess[chess] = handle;
-                BattleManager.RegisterChess(campId, chessId, chess, handle);
-                CreateChessView(campId, chess);
+                return 0;
             }
 
-            return handle;
+            int uniqueId = ChessController.AllocateUniqueId();
+            _agentByUniqueId[uniqueId] = handle;
+            BattleManager.RegisterChess(campId, configId, uniqueId, position, handle);
+            CreateChessView(campId, uniqueId, position);
+            return uniqueId;
         }
 
-        /// <summary>在主线程注销棋子的导航代理并排队移出战斗阵营。</summary>
-        public void UnregisterChess(ChessController chess)
+        /// <summary>在主线程注销棋子的导航代理与视图，并排队移出战斗阵营。</summary>
+        public void UnregisterChess(int uniqueId)
         {
             EnsureMainThread();
-            if (chess != null && _agentByChess.TryGetValue(chess, out NavigationAgentHandle handle))
+            if (uniqueId > 0 && _agentByUniqueId.TryGetValue(uniqueId, out NavigationAgentHandle handle))
             {
                 NavigationManager?.UnregisterAgent(handle);
-                _agentByChess.Remove(chess);
+                _agentByUniqueId.Remove(uniqueId);
             }
 
-            if (chess != null)
+            if (uniqueId > 0)
             {
-                RenderManager?.RemoveChessView(chess.InstanceId);
+                RenderManager?.RemoveChessView(uniqueId);
             }
 
-            BattleManager?.UnregisterChess(chess);
+            BattleManager?.UnregisterChess(uniqueId);
         }
 
-        /// <summary>在主线程立刻创建棋子视图，使用注册前已经写好的棋盘坐标。</summary>
-        private void CreateChessView(int campId, ChessController chess)
+        /// <summary>在主线程立刻创建棋子视图，使用注册时传入的出生点。</summary>
+        private void CreateChessView(int campId, int uniqueId, Vector2 position)
         {
-            if (RenderManager == null || chess == null)
+            if (RenderManager == null)
             {
                 return;
             }
 
-            ChessView view = RenderManager.CreateChessView(chess.InstanceId, campId);
-            if (view == null || chess.RuntimeData == null)
+            ChessView view = RenderManager.CreateChessView(uniqueId, campId);
+            if (view == null)
             {
                 return;
             }
 
-            view.SetPosition(chess.RuntimeData.CurrentPosition);
+            view.SetPosition(position);
             view.SetForward(Vector2.up);
         }
 
@@ -267,7 +266,7 @@ namespace AutoChess
             RenderManager?.Dispose();
             RenderManager = null;
             NavigationManager?.Dispose();
-            _agentByChess.Clear();
+            _agentByUniqueId.Clear();
             if (_instance == this)
             {
                 _instance = null;

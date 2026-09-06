@@ -9,7 +9,7 @@ namespace AutoChess.Render
     public readonly struct ChessRenderSnapshot
     {
         /// <summary>棋子实例唯一 ID。</summary>
-        public readonly int InstanceId;
+        public readonly int UniqueId;
 
         /// <summary>棋子所属阵营 ID。</summary>
         public readonly int CampId;
@@ -21,9 +21,9 @@ namespace AutoChess.Render
         public readonly Vector2 Forward;
 
         /// <summary>创建棋子渲染快照。</summary>
-        public ChessRenderSnapshot(int instanceId, int campId, Vector2 position, Vector2 forward)
+        public ChessRenderSnapshot(int uniqueId, int campId, Vector2 position, Vector2 forward)
         {
-            InstanceId = instanceId;
+            UniqueId = uniqueId;
             CampId = campId;
             Position = position;
             Forward = forward;

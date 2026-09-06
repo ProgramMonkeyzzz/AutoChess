@@ -102,7 +102,7 @@ namespace AutoChess.Editor
         {
             return new ChessBaseData
             {
-                ChessId = source.ChessId,
+                ConfigId = source.ConfigId,
                 Name = source.Name,
                 MaxHp = source.MaxHp,
                 Atk = source.Atk,

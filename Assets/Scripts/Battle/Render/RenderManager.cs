@@ -15,14 +15,14 @@ namespace AutoChess.Render
         /// <summary>Resources 下的子弹预制体路径。</summary>
         private const string BulletPrefabName = "Prefabs/BulletView";
 
-        /// <summary>key 是棋子唯一 InstanceId。</summary>
+        /// <summary>key 是棋子唯一 UniqueId。</summary>
         private readonly Dictionary<int, ChessView> _chessViews = new Dictionary<int, ChessView>();
 
         /// <summary>key 是子弹唯一 BulletId。</summary>
         private readonly Dictionary<int, BulletView> _bulletViews = new Dictionary<int, BulletView>();
 
         /// <summary>本帧存活棋子 ID，供差量清除使用。</summary>
-        private readonly HashSet<int> _liveChessIds = new HashSet<int>();
+        private readonly HashSet<int> _liveChessUniqueIds = new HashSet<int>();
 
         /// <summary>本帧活动子弹 ID，供差量清除使用。</summary>
         private readonly HashSet<int> _liveBulletIds = new HashSet<int>();
@@ -99,17 +99,17 @@ namespace AutoChess.Render
                 return;
             }
 
-            _liveChessIds.Clear();
+            _liveChessUniqueIds.Clear();
             ChessRenderSnapshot[] chessSnapshots = frame.Chess;
             for (int i = 0; i < chessSnapshots.Length; i++)
             {
                 ChessRenderSnapshot snapshot = chessSnapshots[i];
-                if (snapshot.InstanceId <= 0)
+                if (snapshot.UniqueId <= 0)
                 {
                     continue;
                 }
 
-                ChessView view = CreateChessView(snapshot.InstanceId, snapshot.CampId);
+                ChessView view = CreateChessView(snapshot.UniqueId, snapshot.CampId);
                 if (view == null)
                 {
                     continue;
@@ -117,10 +117,10 @@ namespace AutoChess.Render
 
                 view.SetPosition(snapshot.Position);
                 view.SetForward(snapshot.Forward);
-                _liveChessIds.Add(snapshot.InstanceId);
+                _liveChessUniqueIds.Add(snapshot.UniqueId);
             }
 
-            RemoveMissingViews(_chessViews, _liveChessIds, RemoveChessView);
+            RemoveMissingViews(_chessViews, _liveChessUniqueIds, RemoveChessView);
 
             _liveBulletIds.Clear();
             BulletRenderSnapshot[] bulletSnapshots = frame.Bullets;
@@ -146,21 +146,21 @@ namespace AutoChess.Render
             RemoveMissingViews(_bulletViews, _liveBulletIds, RemoveBulletView);
         }
 
-        /// <summary>幂等创建棋子视图；同一 InstanceId 不会重复实例化。</summary>
-        public ChessView CreateChessView(int instanceId)
+        /// <summary>幂等创建棋子视图；同一 UniqueId 不会重复实例化。</summary>
+        public ChessView CreateChessView(int uniqueId)
         {
-            return CreateChessView(instanceId, 0);
+            return CreateChessView(uniqueId, 0);
         }
 
         /// <summary>幂等创建指定阵营的棋子视图。</summary>
-        public ChessView CreateChessView(int instanceId, int campId)
+        public ChessView CreateChessView(int uniqueId, int campId)
         {
-            if (instanceId <= 0)
+            if (uniqueId <= 0)
             {
                 return null;
             }
 
-            if (_chessViews.TryGetValue(instanceId, out ChessView existing) && existing != null)
+            if (_chessViews.TryGetValue(uniqueId, out ChessView existing) && existing != null)
             {
                 existing.SetCampColor(GetCampColor(campId));
                 return existing;
@@ -168,7 +168,7 @@ namespace AutoChess.Render
 
             if (existing != null)
             {
-                _chessViews.Remove(instanceId);
+                _chessViews.Remove(uniqueId);
             }
 
             if (_chessPrefab == null)
@@ -177,7 +177,7 @@ namespace AutoChess.Render
             }
 
             GameObject instance = UnityEngine.Object.Instantiate(_chessPrefab, _chessRoot);
-            instance.name = $"ChessView_{instanceId}";
+            instance.name = $"ChessView_{uniqueId}";
             ChessView view = instance.GetComponent<ChessView>();
             if (view == null)
             {
@@ -185,7 +185,7 @@ namespace AutoChess.Render
             }
 
             view.SetCampColor(GetCampColor(campId));
-            _chessViews[instanceId] = view;
+            _chessViews[uniqueId] = view;
             return view;
         }
 
@@ -225,14 +225,14 @@ namespace AutoChess.Render
         }
 
         /// <summary>销毁并移除指定棋子视图。</summary>
-        public void RemoveChessView(int instanceId)
+        public void RemoveChessView(int uniqueId)
         {
-            if (!_chessViews.TryGetValue(instanceId, out ChessView view))
+            if (!_chessViews.TryGetValue(uniqueId, out ChessView view))
             {
                 return;
             }
 
-            _chessViews.Remove(instanceId);
+            _chessViews.Remove(uniqueId);
             DestroyView(view);
         }
 
@@ -249,9 +249,9 @@ namespace AutoChess.Render
         }
 
         /// <summary>尝试获取已创建的棋子视图。</summary>
-        public bool TryGetChessView(int instanceId, out ChessView view)
+        public bool TryGetChessView(int uniqueId, out ChessView view)
         {
-            return _chessViews.TryGetValue(instanceId, out view) && view != null;
+            return _chessViews.TryGetValue(uniqueId, out view) && view != null;
         }
 
         /// <summary>尝试获取已创建的子弹视图。</summary>

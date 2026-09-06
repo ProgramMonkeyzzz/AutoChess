@@ -14,7 +14,10 @@ namespace Chess
     public class ChessController
     {
         /// <summary>进程内单调递增的棋子实例唯一 ID。</summary>
-        public int InstanceId { get; }
+        public int UniqueId { get; }
+
+        /// <summary>棋子静态配置 ID。</summary>
+        public int ConfigId { get; private set; }
 
         public int Camp => _camp;
         public ChessRuntimeData RuntimeData => _chessRuntimeData;
@@ -33,7 +36,6 @@ namespace Chess
         public FSM.FSM Fsm => _fsm;
 
         private ChessTargetSelector _targetSelector;
-        private int _chessId;
         private int _camp;
         private ChessBaseData _chessBaseData;
         private ChessRuntimeData _chessRuntimeData;
@@ -57,7 +59,7 @@ namespace Chess
         /// <summary>是否已经生成过渲染快照。</summary>
         private bool _hasLastRenderPosition;
         /// <summary>棋子实例 ID 生成器。</summary>
-        private static int _nextInstanceId;
+        private static int _nextUniqueId;
 
         /// <summary>
         /// 创建棋子控制器，并准备运行时可变数据。
@@ -70,9 +72,21 @@ namespace Chess
         /// 创建绑定静态配置的棋子控制器，并初始化运行时战斗数据。
         /// </summary>
         public ChessController(ChessBaseData baseData)
+            : this(AllocateUniqueId(), baseData)
         {
-            InstanceId = Interlocked.Increment(ref _nextInstanceId);
+        }
+
+        /// <summary>使用预先分配的 UniqueId 创建棋子，供阵营工厂使用。</summary>
+        internal ChessController(int uniqueId, ChessBaseData baseData)
+        {
+            if (uniqueId <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(uniqueId));
+            }
+
+            UniqueId = uniqueId;
             _chessBaseData = baseData;
+            ConfigId = baseData == null ? 0 : baseData.ConfigId;
             // 移动控制器需要持续写入运行时位置，因此默认保证数据对象存在。
             _chessRuntimeData = new ChessRuntimeData();
             if (_chessBaseData != null)
@@ -104,6 +118,12 @@ namespace Chess
             _fsm.Start<MovementState>();
         }
 
+        /// <summary>分配下一个进程内唯一棋子 ID。</summary>
+        internal static int AllocateUniqueId()
+        {
+            return Interlocked.Increment(ref _nextUniqueId);
+        }
+
         /// <summary>
         /// 绑定该棋子的 RVO 导航代理。
         /// </summary>
@@ -116,17 +136,12 @@ namespace Chess
         /// <summary>
         /// 设置棋子的阵营上下文，供 CampManager 在注册时调用。
         /// </summary>
-        internal void SetCampContext(int camp, int chessId, CampGroup campGroup)
+        internal void SetCampContext(int camp, int configId, CampGroup campGroup)
         {
             _camp = camp;
-            _chessId = chessId;
+            ConfigId = configId;
             _campGroup = campGroup;
         }
-
-        /// <summary>
-        /// 获取棋子配置 ID，供阵营和导航排序使用。
-        /// </summary>
-        internal int ChessId => _chessId;
 
         /// <summary>
         /// 生成当前棋子的导航输入，供 BattleManager 发布给主线程。
@@ -238,7 +253,7 @@ namespace Chess
             Vector2 forward = ResolveRenderForward(position);
             _lastRenderPosition = position;
             _hasLastRenderPosition = true;
-            return new ChessRenderSnapshot(InstanceId, _camp, position, forward);
+            return new ChessRenderSnapshot(UniqueId, _camp, position, forward);
         }
 
         /// <summary>

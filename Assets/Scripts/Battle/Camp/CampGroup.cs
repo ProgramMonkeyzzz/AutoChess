@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using AutoChess.Utils;
 using Chess;
+using Config;
+using UnityEngine;
 
 namespace Camp
 {
@@ -10,6 +13,7 @@ namespace Camp
     public class CampGroup
     {
         private readonly int _campId;
+        /// <summary>按 ConfigId 分组的棋子实例集合。</summary>
         private readonly Dictionary<int, HashSet<ChessController>> _chessDict =
             new Dictionary<int, HashSet<ChessController>>();
         private readonly CampManager _campManager;
@@ -27,22 +31,37 @@ namespace Camp
         /// <summary>获取所属阵营管理器。</summary>
         public CampManager CampManager => _campManager;
 
-        /// <summary>注册一个棋子实例到指定配置 ID 分组。</summary>
-        public void RegisterChess(int chessId, ChessController chess)
+        /// <summary>按 ConfigId 查配置并使用预分配 UniqueId 创建棋子。</summary>
+        public ChessController RegisterChess(int configId, int uniqueId, Vector2 position)
         {
-            if (chess == null)
+            if (uniqueId <= 0)
             {
-                throw new ArgumentNullException(nameof(chess));
+                throw new ArgumentOutOfRangeException(nameof(uniqueId));
             }
 
-            if (!_chessDict.TryGetValue(chessId, out HashSet<ChessController> chessSet))
+            ChessConfigRepository configs = _campManager == null ? null : _campManager.Configs;
+            if (configs == null || !configs.TryGet(configId, out ChessBaseData source) || source == null)
+            {
+                ThreadLogQueue.Enqueue(ThreadLogLevel.Error,
+                    "CampGroup 找不到 ConfigId=" + configId + " 的棋子配置。");
+                return null;
+            }
+
+            ChessController chess = new ChessController(uniqueId, source.Clone());
+            if (chess.RuntimeData != null)
+            {
+                chess.RuntimeData.CurrentPosition = position;
+            }
+
+            if (!_chessDict.TryGetValue(configId, out HashSet<ChessController> chessSet))
             {
                 chessSet = new HashSet<ChessController>();
-                _chessDict.Add(chessId, chessSet);
+                _chessDict.Add(configId, chessSet);
             }
 
             chessSet.Add(chess);
-            chess.SetCampContext(_campId, chessId, this);
+            chess.SetCampContext(_campId, configId, this);
+            return chess;
         }
 
         /// <summary>从当前阵营分组中注销棋子实例。</summary>
@@ -80,13 +99,20 @@ namespace Camp
             return result;
         }
 
-        /// <summary>按导航代理 ID 对阵营内棋子进行稳定排序。</summary>
+        /// <summary>按导航代理 ID，相等时再按 UniqueId 对阵营内棋子进行稳定排序。</summary>
         private static int CompareChess(ChessController left, ChessController right)
         {
             int leftId = left?.MovementController?.Agent.AgentId ?? int.MaxValue;
             int rightId = right?.MovementController?.Agent.AgentId ?? int.MaxValue;
             int compare = leftId.CompareTo(rightId);
-            return compare != 0 ? compare : (left?.ChessId ?? int.MaxValue).CompareTo(right?.ChessId ?? int.MaxValue);
+            if (compare != 0)
+            {
+                return compare;
+            }
+
+            int leftUniqueId = left == null ? int.MaxValue : left.UniqueId;
+            int rightUniqueId = right == null ? int.MaxValue : right.UniqueId;
+            return leftUniqueId.CompareTo(rightUniqueId);
         }
     }
 }

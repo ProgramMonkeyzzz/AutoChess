@@ -25,7 +25,7 @@ public class ConfigBinaryExporterTests
         CreateFolder("Assets/Configs/__ConfigBinaryExporterTests", "Nested");
 
         var source = ScriptableObject.CreateInstance<global::Editor.ChessBaseDataSo>();
-        source.ChessId = 42;
+        source.ConfigId = 42;
         source.Name = "Test Chess";
         source.MaxHp = 500;
         source.Atk = 12;
@@ -56,7 +56,7 @@ public class ConfigBinaryExporterTests
         Assert.That(File.Exists(GetProjectAbsolutePath(OutputAssetPath)), Is.True);
 
         ChessBaseData data = ReadBinary(OutputAssetPath);
-        Assert.That(data.ChessId, Is.EqualTo(42));
+        Assert.That(data.ConfigId, Is.EqualTo(42));
         Assert.That(data.Name, Is.EqualTo("Test Chess"));
         Assert.That(data.MaxHp, Is.EqualTo(500));
         Assert.That(data.Atk, Is.EqualTo(12));
