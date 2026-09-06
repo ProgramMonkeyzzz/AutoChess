@@ -119,15 +119,62 @@ public class FSMTests
     }
 
     [Test]
-    public void StartAndChangeStateValidateLifecycle()
+    public void StartAndCheckCurrentStateTransitionValidateLifecycle()
     {
-        var fsm = CreateFsm(out _, out _, out _);
+        var fsm = CreateFsm(out _, out IdleState idle, out AttackState attack);
 
+        Assert.That(fsm.CheckCurrentStateTransition(), Is.Null);
         Assert.Throws<InvalidOperationException>(() => fsm.Start<UnregisteredState>());
         fsm.Start<IdleState>();
         Assert.Throws<InvalidOperationException>(() => fsm.Start<IdleState>());
-        Assert.That(fsm.ChangeState<IdleState>(), Is.False);
-        Assert.That(fsm.ChangeState<AttackState>(), Is.True);
+        Assert.That(fsm.CheckCurrentStateTransition(), Is.SameAs(idle));
+        Assert.That(fsm.CurrentState, Is.SameAs(idle));
+        Assert.That(attack.EnterCount, Is.EqualTo(0));
+
+        fsm.AddTransition(new ConditionalTransition<IdleState, AttackState>(fsm, () => true));
+        Assert.That(fsm.CheckCurrentStateTransition(), Is.SameAs(attack));
+        Assert.That(fsm.CurrentState, Is.SameAs(attack));
+        Assert.That(fsm.CheckCurrentStateTransition(), Is.SameAs(attack));
+        Assert.That(attack.EnterCount, Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// 验证目标已是当前状态时检查转换不会重入生命周期。
+    /// </summary>
+    [Test]
+    public void CheckCurrentStateTransitionSkipsReentryWhenTargetIsCurrent()
+    {
+        var fsm = CreateFsm(out List<string> events, out IdleState idle, out _);
+        fsm.AddTransition(new ConditionalTransition<IdleState, IdleState>(fsm, () => true));
+        fsm.Start<IdleState>();
+        events.Clear();
+
+        Assert.That(fsm.CheckCurrentStateTransition(), Is.SameAs(idle));
+        Assert.That(events, Is.Empty);
+        Assert.That(idle.EnterCount, Is.EqualTo(1));
+    }
+
+    /// <summary>
+    /// 验证 CheckCurrentStateTransition 按注册顺序选择第一个可切换目标，且不执行 Stay。
+    /// </summary>
+    [Test]
+    public void CheckCurrentStateTransitionSelectsFirstSatisfiedTargetWithoutStay()
+    {
+        var fsm = new FSM(new ChessController());
+        var events = new List<string>();
+        var idle = new IdleState(fsm, events);
+        var attack = new AttackState(fsm, events);
+        var dead = new DeadState(fsm, events);
+        fsm.AddState(idle);
+        fsm.AddState(attack);
+        fsm.AddState(dead);
+        fsm.AddTransition(new ConditionalTransition<IdleState, AttackState>(fsm, () => true));
+        fsm.AddTransition(new ConditionalTransition<IdleState, DeadState>(fsm, () => true));
+        fsm.Start<IdleState>();
+
+        Assert.That(fsm.CheckCurrentStateTransition(), Is.SameAs(attack));
+        Assert.That(dead.EnterCount, Is.EqualTo(0));
+        Assert.That(events, Is.EqualTo(new[] { "idle.enter", "idle.exit", "attack.enter" }));
     }
 
     [Test]
@@ -159,11 +206,14 @@ public class FSMTests
         var attack = new AttackState(fsm, events);
         fsm.AddState(idle);
         fsm.AddState(attack);
+        bool canAttack = false;
+        fsm.AddTransition(new ConditionalTransition<IdleState, AttackState>(fsm, () => canAttack));
 
         fsm.Start<IdleState>();
         fsm.Tick(0.25f);
         fsm.Tick(0.5f);
-        fsm.ChangeState<AttackState>();
+        canAttack = true;
+        fsm.CheckCurrentStateTransition();
 
         Assert.That(events, Is.EqualTo(new[]
         {
@@ -194,6 +244,10 @@ public class FSMTests
         var attack = new AttackState(fsm, events);
         fsm.AddState(idle);
         fsm.AddState(attack);
+        bool toAttack = false;
+        bool toIdle = false;
+        fsm.AddTransition(new ConditionalTransition<IdleState, AttackState>(fsm, () => toAttack));
+        fsm.AddTransition(new ConditionalTransition<AttackState, IdleState>(fsm, () => toIdle));
 
         fsm.Start<IdleState>();
         fsm.Tick(0.1f);
@@ -202,8 +256,11 @@ public class FSMTests
         Assert.That(stayAction.UpdateCount, Is.EqualTo(1));
         Assert.That(stayTree.Status, Is.EqualTo(NodeStatus.Success));
 
-        fsm.ChangeState<AttackState>();
-        fsm.ChangeState<IdleState>();
+        toAttack = true;
+        fsm.CheckCurrentStateTransition();
+        toAttack = false;
+        toIdle = true;
+        fsm.CheckCurrentStateTransition();
         fsm.Tick(0.3f);
 
         Assert.That(stayAction.UpdateCount, Is.EqualTo(2));
@@ -228,11 +285,14 @@ public class FSMTests
         var attack = new AttackState(fsm, events);
         fsm.AddState(idle);
         fsm.AddState(attack);
+        bool canAttack = false;
+        fsm.AddTransition(new ConditionalTransition<IdleState, AttackState>(fsm, () => canAttack));
 
         fsm.Start<IdleState>();
         fsm.Tick(0.1f);
         fsm.Tick(0.2f);
-        fsm.ChangeState<AttackState>();
+        canAttack = true;
+        fsm.CheckCurrentStateTransition();
 
         Assert.That(enterAction.InvocationCount, Is.EqualTo(1));
         Assert.That(stayAction.InvocationCount, Is.EqualTo(1));

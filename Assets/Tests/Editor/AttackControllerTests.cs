@@ -137,7 +137,8 @@ public class AttackControllerTests
         _attacker.Tick(0.5f);
         Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0.5f).Within(0.0001f));
 
-        _attacker.Fsm.ChangeState<MovementState>();
+        BindAttackerMovement(Vector2.zero);
+        Assert.That(_attacker.MovementController.MoveToPosition(new Vector2(7f, 8f)), Is.True);
 
         Assert.That(_attacker.AttackController.IsWindingUp, Is.False);
         Assert.That(_attacker.AttackController.CooldownRemaining, Is.EqualTo(0.5f).Within(0.0001f));
@@ -368,7 +369,7 @@ public class AttackControllerTests
 
         SelectTarget(_attacker, _target);
         _target.RuntimeData.Hp = 0;
-        _target.Fsm.ChangeState<DeadState>();
+        _target.Fsm.CheckCurrentStateTransition();
         _attacker.AttackController.Tick(1f);
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(0));
     }

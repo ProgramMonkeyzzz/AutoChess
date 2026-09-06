@@ -177,18 +177,19 @@ namespace Chess
                 return false;
             }
 
-            // 合法攻击开始时立即进入攻击状态，进入状态会停止当前移动命令。
+            // 先锁定前摇目标，使 MovementToAttack 在检查转换时成立。
+            _windUpTarget = target;
+            _windUpRemaining = _chessController.BaseData.WindUpTime;
             _chessController.EnterAttackState();
 
             if (_chessController.BaseData.WindUpTime <= 0f)
             {
+                _windUpTarget = null;
+                _windUpRemaining = 0f;
                 ApplyHit(target);
                 _cooldownRemaining = GetAttackInterval();
-                return true;
             }
 
-            _windUpTarget = target;
-            _windUpRemaining = _chessController.BaseData.WindUpTime;
             return true;
         }
 

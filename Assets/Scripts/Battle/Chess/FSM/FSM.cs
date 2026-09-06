@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Chess;
 
@@ -101,26 +101,38 @@ namespace Chess.FSM
         }
 
         /// <summary>
-        /// 显式切换到指定状态。未启动时可作为初始状态进入。
+        /// 检查当前状态的全部转换，执行第一个可切换的目标并返回该状态。
+        /// 未启动或无当前状态时返回 null；没有可切换转换时返回当前状态。
         /// </summary>
-        public bool ChangeState<TState>() where TState : StateBase
+        public StateBase CheckCurrentStateTransition()
         {
-            Type stateType = typeof(TState);
-            StateBase nextState = GetRegisteredState(stateType);
-            if (_currentState != null && _currentState.GetType() == stateType)
+            if (!_isStarted || _currentState == null)
             {
-                return false;
+                return null;
             }
 
-            if (_currentState != null)
+            if (!_transitionDict.TryGetValue(_currentState.GetType(), out HashSet<StateTransition> transitions))
             {
-                _currentState.OnStateExit();
+                return _currentState;
             }
 
-            _currentState = nextState;
-            _isStarted = true;
-            _currentState.OnStateEnter();
-            return true;
+            foreach (StateTransition transition in transitions)
+            {
+                if (!transition.CanTransition())
+                {
+                    continue;
+                }
+
+                StateBase nextState = GetRegisteredState(transition.State2Type);
+                if (!ReferenceEquals(_currentState, nextState))
+                {
+                    ChangeState(nextState);
+                }
+
+                return nextState;
+            }
+
+            return _currentState;
         }
 
         /// <summary>
@@ -142,21 +154,13 @@ namespace Chess.FSM
                 return;
             }
 
-            if (_transitionDict.TryGetValue(_currentState.GetType(), out HashSet<StateTransition> transitions))
-            {
-                foreach (StateTransition transition in transitions)
-                {
-                    if (transition.CanTransition())
-                    {
-                        ChangeStateByType(transition.State2Type);
-                        break;
-                    }
-                }
-            }
-
+            CheckCurrentStateTransition();
             _currentState.OnStateStay(deltaTime);
         }
 
+        /// <summary>
+        /// 按类型读取已注册状态，未注册时抛出异常。
+        /// </summary>
         private StateBase GetRegisteredState(Type stateType)
         {
             if (!_stateDict.TryGetValue(stateType, out StateBase state))
@@ -167,17 +171,29 @@ namespace Chess.FSM
             return state;
         }
 
-        private void ChangeStateByType(Type stateType)
+        /// <summary>
+        /// 切换到指定状态实例。切到当前状态时返回 false 且不重入生命周期。
+        /// </summary>
+        private bool ChangeState(StateBase nextState)
         {
-            StateBase nextState = GetRegisteredState(stateType);
-            if (_currentState.GetType() == stateType)
+            if (nextState == null)
             {
-                return;
+                throw new ArgumentNullException(nameof(nextState));
+            }
+            if (ReferenceEquals(_currentState, nextState))
+            {
+                return false;
             }
 
-            _currentState.OnStateExit();
+            if (_currentState != null)
+            {
+                _currentState.OnStateExit();
+            }
+
             _currentState = nextState;
+            _isStarted = true;
             _currentState.OnStateEnter();
+            return true;
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Reflection;
 using Camp;
 using Chess;
@@ -140,7 +140,7 @@ public class ChessTargetSelectorTests
     public void DeadEnemyCanStillBeSelected()
     {
         _farEnemy.RuntimeData.Hp = 0;
-        _farEnemy.Fsm.ChangeState<DeadState>();
+        _farEnemy.Fsm.CheckCurrentStateTransition();
 
         AssertSelected(ChessTargetSelector.TargetSelectMode.LowestHp, _farEnemy);
         AssertSelected(ChessTargetSelector.TargetSelectMode.Farthest, _farEnemy);

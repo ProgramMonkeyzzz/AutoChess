@@ -110,7 +110,9 @@ public class ChessBehaviorConditionalTests
     [Test]
     public void IsTargetDeadSucceedsWhenInDeadState()
     {
-        _target.Fsm.ChangeState<DeadState>();
+        _target.RuntimeData.Hp = 0;
+        _target.Fsm.CheckCurrentStateTransition();
+        Assert.That(_target.Fsm.CurrentState, Is.TypeOf<DeadState>());
 
         Assert.That(TickConditional(ChessBehaviorTreeLogic.IsTargetDead, _owner), Is.EqualTo(NodeStatus.Success));
     }

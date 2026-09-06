@@ -98,7 +98,7 @@
 2. 先 `AddState`，再 `AddTransition`（源状态和目标状态都必须已注册）
 3. `Start<TState>()` 进入初始状态；重复启动会抛异常
 4. 每帧调用 `Tick()`：先按注册顺序检查当前状态的转换（第一个满足条件的生效），再对切换后的当前状态调用 `OnStateStay`
-5. `ChangeState<TState>()` 可显式切状态；切到当前状态时返回 `false` 且不重入生命周期
+5. `CheckCurrentStateTransition()` 按注册顺序检查当前状态的转换，执行第一个可切换目标并返回该状态；未启动时返回 null，没有可切换转换时返回当前状态。切到当前状态时不重入生命周期
 6. `Tick(float deltaTime)` 将时间步传给当前状态的 Stay 行为树；无参 `Tick()` 使用零时间步
 
 当前仓库已实现正式的 `MovementState`、`AttackState` 和 `DeadState`，攻击计时由 `AttackController` 负责。

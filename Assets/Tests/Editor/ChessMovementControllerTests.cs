@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.Reflection;
 using AutoChess;
 using AutoChess.Navigation;
 using Chess;
@@ -48,7 +49,8 @@ public class ChessMovementControllerTests
     public void NewChessRegistersDeadStateAndDamageReceiver()
     {
         Assert.That(_owner.DamageReceiver, Is.Not.Null);
-        Assert.That(_owner.Fsm.ChangeState<DeadState>(), Is.True);
+        _owner.RuntimeData.Hp = 0;
+        Assert.That(_owner.Fsm.CheckCurrentStateTransition(), Is.TypeOf<DeadState>());
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
     }
 
@@ -142,11 +144,15 @@ public class ChessMovementControllerTests
     public void StateExitStopsMovementCommand()
     {
         Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
-        Assert.That(_owner.Fsm.ChangeState<AttackState>(), Is.True);
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = new Vector2(3f, 4f);
+        SelectTarget(_owner, target);
+        _owner.AttackController.AttackTarget();
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
         Assert.That(_movement.HasDestination, Is.False);
 
-        _owner.Fsm.ChangeState<MovementState>();
         Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
         _owner.DamageReceiver.ApplyDamage(1000);
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
         Assert.That(_movement.HasDestination, Is.False);
@@ -270,6 +276,16 @@ public class ChessMovementControllerTests
     }
 
     /// <summary>创建测试用棋子配置。</summary>
+    /// <summary>
+    /// 测试侧设置当前索敌目标，保持生产目标选择器不开放手动写入接口。
+    /// </summary>
+    private static void SelectTarget(ChessController owner, ChessController target)
+    {
+        PropertyInfo property = typeof(ChessTargetSelector).GetProperty(
+            nameof(ChessTargetSelector.SelectedChessController));
+        property.GetSetMethod(true).Invoke(owner.TargetSelector, new object[] { target });
+    }
+
     private static ChessBaseData CreateConfig(int hp, float moveSpeed)
     {
         return new ChessBaseData

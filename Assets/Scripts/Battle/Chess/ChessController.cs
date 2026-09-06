@@ -44,14 +44,6 @@ namespace Chess
         private ChessMovementController _movementController;
         /// <summary>该棋子的伤害接收器。</summary>
         private ChessDamageReceiver _chessDamageReceiver;
-        /// <summary>从移动状态到死亡状态的单向转换。</summary>
-        private MovementToDeadTransition _movementToDeadTransition;
-        /// <summary>从移动状态到攻击状态的转换。</summary>
-        private MovementToAttackTransition _movementToAttackTransition;
-        /// <summary>从攻击状态到移动状态的转换。</summary>
-        private AttackToMovementTransition _attackToMovementTransition;
-        /// <summary>从攻击状态到死亡状态的转换。</summary>
-        private AttackToDeadTransition _attackToDeadTransition;
         /// <summary>该棋子的攻击控制器。</summary>
         private AttackController _attackController;
         /// <summary>上一份渲染快照中的棋盘位置，用于计算位移朝向。</summary>
@@ -107,14 +99,10 @@ namespace Chess
             _fsm.AddState(new MovementState(_fsm));
             _fsm.AddState(new AttackState(_fsm));
             _fsm.AddState(new DeadState(_fsm));
-            _movementToAttackTransition = new MovementToAttackTransition(_fsm);
-            _movementToDeadTransition = new MovementToDeadTransition(_fsm);
-            _attackToMovementTransition = new AttackToMovementTransition(_fsm);
-            _attackToDeadTransition = new AttackToDeadTransition(_fsm);
-            _fsm.AddTransition(_movementToAttackTransition);
-            _fsm.AddTransition(_movementToDeadTransition);
-            _fsm.AddTransition(_attackToMovementTransition);
-            _fsm.AddTransition(_attackToDeadTransition);
+            _fsm.AddTransition(new MovementToAttackTransition(_fsm));
+            _fsm.AddTransition(new MovementToDeadTransition(_fsm));
+            _fsm.AddTransition(new AttackToMovementTransition(_fsm));
+            _fsm.AddTransition(new AttackToDeadTransition(_fsm));
             _fsm.Start<MovementState>();
         }
 
@@ -181,54 +169,27 @@ namespace Chess
         }
 
         /// <summary>
-        /// 在移动命令成功建立后切回默认移动状态。
+        /// 在移动命令成功建立后检查当前状态转换，满足条件时切回移动状态。
         /// </summary>
         internal void EnterMovementState()
         {
-            if (_fsm.CurrentState is DeadState)
-            {
-                return;
-            }
-
-            _fsm.ChangeState<MovementState>();
+            _fsm.CheckCurrentStateTransition();
         }
 
         /// <summary>
-        /// 在攻击流程开始后从移动状态切换到攻击状态。
+        /// 在攻击流程开始后检查当前状态转换，满足条件时切入攻击状态。
         /// </summary>
         internal void EnterAttackState()
         {
-            if (_fsm.CurrentState is MovementState)
-            {
-                _fsm.ChangeState<AttackState>();
-            }
+            _fsm.CheckCurrentStateTransition();
         }
 
         /// <summary>
-        /// 在受到伤害后检查并立即执行 MovementState 到 DeadState 的转换。
+        /// 在受到伤害后立即检查当前状态转换，满足条件时切入死亡状态。
         /// </summary>
         internal void CheckDeathStateTransition()
         {
-            StateTransition deathTransition;
-            if (_fsm.CurrentState is MovementState)
-            {
-                deathTransition = _movementToDeadTransition;
-            }
-            else if (_fsm.CurrentState is AttackState)
-            {
-                deathTransition = _attackToDeadTransition;
-            }
-            else
-            {
-                return;
-            }
-
-            if (!deathTransition.CanTransition())
-            {
-                return;
-            }
-
-            _fsm.ChangeState<DeadState>();
+            _fsm.CheckCurrentStateTransition();
         }
 
         /// <summary>

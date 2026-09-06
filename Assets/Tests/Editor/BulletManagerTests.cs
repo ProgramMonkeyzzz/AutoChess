@@ -121,7 +121,10 @@ public class BulletManagerTests
         {
             BulletRuntimeData bullet = manager.RegisterBullet(_owner, _target, 10f);
             manager.Tick(0.1f);
-            _target.Fsm.ChangeState<DeadState>();
+            _target.RuntimeData.Hp = 0;
+            _target.Fsm.CheckCurrentStateTransition();
+            // 恢复 HP 以便断言失效目标抵达时不会被补伤。
+            _target.RuntimeData.Hp = 100;
             _target.RuntimeData.CurrentPosition = new Vector2(9f, 0f);
 
             manager.Tick(0.2f);

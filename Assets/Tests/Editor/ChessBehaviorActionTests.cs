@@ -1,4 +1,4 @@
-﻿#if UNITY_EDITOR
+#if UNITY_EDITOR
 using System.Collections.Generic;
 using System.Reflection;
 using AutoChess;
@@ -186,7 +186,8 @@ public class ChessBehaviorActionTests
     public void MoveToTargetSucceedsAndEntersMovementState()
     {
         BindOwnerMovement();
-        _owner.Fsm.ChangeState<AttackState>();
+        _owner.AttackController.AttackTarget();
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
 
         Assert.That(
             TickAction(ChessBehaviorTreeLogic.MoveToTarget, _owner),
