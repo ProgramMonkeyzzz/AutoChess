@@ -1,11 +1,13 @@
 #if UNITY_EDITOR
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AutoChess.Editor;
 using BehaviorTree;
 using NUnit.Framework;
+using Sirenix.OdinInspector.Editor;
 using UnityEditor;
 using UnityEngine;
 
@@ -243,6 +245,73 @@ public class BehaviorTreeGraphTests
         {
             UnityEngine.Object.DestroyImmediate(graph);
         }
+    }
+
+    /// <summary>
+    /// 验证叶节点参数 Inspector 用列表宿主创建 PropertyTree，空列表和多参数都不会按多目标创建。
+    /// </summary>
+    [Test]
+    public void ParameterPropertyTreeAcceptsEmptyListAndInspectsHost()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => BehaviorTreeGraphInspector.CreateParameterPropertyTree(null));
+
+        var emptyParameters = new List<BehaviorTreeEditorParameter>();
+        PropertyTree emptyTree = null;
+        try
+        {
+            Assert.DoesNotThrow(
+                () => emptyTree = BehaviorTreeGraphInspector.CreateParameterPropertyTree(emptyParameters));
+            Assert.That(emptyTree, Is.Not.Null);
+            Assert.That(emptyTree.WeakTargets.Count, Is.EqualTo(1));
+            Assert.That(GetHostParameters(emptyTree), Is.SameAs(emptyParameters));
+        }
+        finally
+        {
+            emptyTree?.Dispose();
+        }
+
+        var parameters = new List<BehaviorTreeEditorParameter>
+        {
+            new BehaviorTreeEditorParameter
+            {
+                key = "Damage",
+                type = BehaviorTreeParameterType.Int,
+                intValue = 12
+            },
+            new BehaviorTreeEditorParameter
+            {
+                key = "Enabled",
+                type = BehaviorTreeParameterType.Bool,
+                boolValue = true
+            }
+        };
+        PropertyTree tree = null;
+        try
+        {
+            tree = BehaviorTreeGraphInspector.CreateParameterPropertyTree(parameters);
+            Assert.That(tree.WeakTargets.Count, Is.EqualTo(1));
+            Assert.That(GetHostParameters(tree), Is.SameAs(parameters));
+        }
+        finally
+        {
+            tree?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// 从参数 PropertyTree 读取宿主中绑定的列表实例。
+    /// </summary>
+    private static List<BehaviorTreeEditorParameter> GetHostParameters(PropertyTree tree)
+    {
+        Assert.That(tree, Is.Not.Null);
+        Assert.That(tree.WeakTargets, Is.Not.Null);
+        Assert.That(tree.WeakTargets.Count, Is.GreaterThan(0));
+        var host = tree.WeakTargets[0];
+        Assert.That(host, Is.Not.Null);
+        var field = host.GetType().GetField("Parameters");
+        Assert.That(field, Is.Not.Null);
+        return field.GetValue(host) as List<BehaviorTreeEditorParameter>;
     }
 
     /// <summary>

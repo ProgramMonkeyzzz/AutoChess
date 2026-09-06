@@ -1,13 +1,13 @@
 #if UNITY_EDITOR
 
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using BehaviorTree;
 using NodeCanvas.Editor;
 using ParadoxNotion.Design;
+using Sirenix.OdinInspector;
 using Sirenix.OdinInspector.Editor;
 using UnityEditor;
 using UnityEngine;
@@ -19,6 +19,25 @@ namespace AutoChess.Editor
     /// </summary>
     internal static class BehaviorTreeGraphInspector
     {
+        /// <summary>缓存的参数 PropertyTree，避免 GraphEditor 在 Layout/Repaint 之间重建导致 GUILayout 失配。</summary>
+        private static PropertyTree _parameterTree;
+
+        /// <summary>当前缓存 PropertyTree 绑定的叶节点。</summary>
+        private static BehaviorTreeGraphNode _parameterTreeNode;
+
+        /// <summary>当前缓存 PropertyTree 绑定的参数列表实例。</summary>
+        private static List<BehaviorTreeEditorParameter> _parameterTreeList;
+
+        /// <summary>
+        /// 在程序集卸载前释放缓存的 PropertyTree。
+        /// </summary>
+        [InitializeOnLoadMethod]
+        private static void RegisterParameterTreeCleanup()
+        {
+            AssemblyReloadEvents.beforeAssemblyReload -= DisposeParameterTree;
+            AssemblyReloadEvents.beforeAssemblyReload += DisposeParameterTree;
+        }
+
         /// <summary>
         /// 绘制叶节点 Inspector，并在 LogicId 变更后同步目录默认参数。
         /// </summary>
@@ -86,8 +105,7 @@ namespace AutoChess.Editor
 
             EditorGUILayout.LabelField("Parameters", EditorStyles.boldLabel);
             EditorGUI.BeginChangeCheck();
-            var propertyTree = PropertyTree.Create((IList)parameters);
-            propertyTree.Draw(false);
+            DrawParameterList(node, parameters);
             if (GUILayout.Button("Add Parameter", EditorStyles.miniButton))
             {
                 parameters.Add(new BehaviorTreeEditorParameter
@@ -107,6 +125,20 @@ namespace AutoChess.Editor
         }
 
         /// <summary>
+        /// 为参数列表创建 Odin PropertyTree；始终以列表宿主作为唯一 target，允许空列表。
+        /// </summary>
+        internal static PropertyTree CreateParameterPropertyTree(
+            List<BehaviorTreeEditorParameter> parameters)
+        {
+            if (parameters == null)
+            {
+                throw new ArgumentNullException(nameof(parameters));
+            }
+
+            return PropertyTree.Create(new ParameterListHost { Parameters = parameters });
+        }
+
+        /// <summary>
         /// 获取指定类别的可编辑逻辑目录。
         /// </summary>
         private static IEnumerable<BehaviorTreeLogicDefinition> GetDefinitions(
@@ -115,6 +147,47 @@ namespace AutoChess.Editor
             return kind == BehaviorTreeLogicKind.Action
                 ? BehaviorTreeLogicCatalog.Actions
                 : BehaviorTreeLogicCatalog.Conditionals;
+        }
+
+        /// <summary>
+        /// 绘制并缓存参数列表的 PropertyTree。
+        /// </summary>
+        private static void DrawParameterList(
+            BehaviorTreeGraphNode node,
+            List<BehaviorTreeEditorParameter> parameters)
+        {
+            if (parameters == null)
+            {
+                return;
+            }
+
+            if (_parameterTree == null
+                || !ReferenceEquals(_parameterTreeNode, node)
+                || !ReferenceEquals(_parameterTreeList, parameters))
+            {
+                DisposeParameterTree();
+                _parameterTree = CreateParameterPropertyTree(parameters);
+                _parameterTreeNode = node;
+                _parameterTreeList = parameters;
+            }
+
+            _parameterTree.UpdateTree();
+            _parameterTree.Draw(false);
+        }
+
+        /// <summary>
+        /// 释放缓存的参数 PropertyTree。
+        /// </summary>
+        private static void DisposeParameterTree()
+        {
+            if (_parameterTree != null)
+            {
+                _parameterTree.Dispose();
+                _parameterTree = null;
+            }
+
+            _parameterTreeNode = null;
+            _parameterTreeList = null;
         }
 
         /// <summary>
@@ -141,6 +214,24 @@ namespace AutoChess.Editor
 
                 parameter.type = parameterDefinition.Type;
             }
+        }
+
+        /// <summary>
+        /// Odin 绘制参数列表时使用的宿主，避免把空 List 当作 PropertyTree 的多目标。
+        /// </summary>
+        [Serializable]
+        private sealed class ParameterListHost
+        {
+            /// <summary>当前叶节点的可编辑参数。</summary>
+            [HideLabel]
+            [ListDrawerSettings(
+                Expanded = true,
+                DraggableItems = true,
+                ShowPaging = false,
+                ShowFoldout = false,
+                HideAddButton = true,
+                ListElementLabelName = "key")]
+            public List<BehaviorTreeEditorParameter> Parameters;
         }
     }
 
