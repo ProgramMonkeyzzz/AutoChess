@@ -20,7 +20,7 @@ MonoBehaviour:
   MoveSpeed: 10
   AtkSpeed: 2
   WindUpTime: 1
-  BulletSpeed: 0
+  BulletSpeed: 1
   MovementEnterBehaviorTree: 
   MovementStayBehaviorTree: ChessCombat
   MovementExitBehaviorTree: 
