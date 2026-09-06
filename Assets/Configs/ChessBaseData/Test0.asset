@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ConfigId: 0
   Name: "\u8FD1\u6218"
-  MaxHp: 100
+  MaxHp: 1000
   Atk: 20
   Range: 1
   MoveSpeed: 5

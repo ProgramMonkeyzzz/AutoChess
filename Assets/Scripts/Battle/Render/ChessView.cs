@@ -8,6 +8,7 @@ namespace AutoChess.Render
     public class ChessView : MonoBehaviour
     {
         [SerializeField] private Transform _chessTransform;
+        [SerializeField] private Transform _hpTransform;
         [SerializeField] private float _height;
 
         /// <summary>用于阵营着色的材质实例，避免修改预制体共享材质。</summary>
@@ -27,6 +28,15 @@ namespace AutoChess.Render
                 }
 
                 return _chessTransform;
+            }
+        }
+
+        /// <summary>血条跟随的世界坐标锚点；未序列化时回退到棋子 transform。</summary>
+        public Transform HpTransform
+        {
+            get
+            {
+                return _hpTransform != null ? _hpTransform : TargetTransform;
             }
         }
 

@@ -107,3 +107,6 @@ InitTestScene*.unity*
 .idea
 TestResults.xml
 TestResults-BehaviorTreeEditor.xml
+ProjectSettings/SceneTemplateSettings.json
+TestResults-Snapshot.xml
+TestResults-UIHp.xml

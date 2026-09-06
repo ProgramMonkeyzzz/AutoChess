@@ -208,8 +208,47 @@ public class BattleRenderSnapshotTests
             Assert.That(frame.Chess[0].UniqueId, Is.EqualTo(uniqueId));
             Assert.That(frame.Chess[0].CampId, Is.EqualTo(1));
             Assert.That(frame.Chess[0].Position, Is.EqualTo(new Vector2(5f, 7f)));
+            Assert.That(frame.Chess[0].HpProgress, Is.EqualTo(1f));
             Assert.That(frame.Bullets, Is.Empty);
         }
+    }
+
+    /// <summary>验证受伤棋子快照写入 Hp / MaxHp 进度。</summary>
+    [Test]
+    public void DamagedChessSnapshotReportsHpProgress()
+    {
+        using (var manager = new BattleManager())
+        {
+            manager.Configs.Register(CreateConfig(1, 50));
+            int uniqueId = manager.RegisterChess(1, 1, new Vector2(5f, 7f));
+            Assert.That(manager.TryGetChess(uniqueId, out ChessController chess), Is.True);
+            chess.DamageReceiver.ApplyDamage(20);
+            manager.Start();
+            manager.RequestAdvance(1);
+
+            BattleRenderFrame frame = WaitForFrame(manager);
+            Assert.That(frame.Chess.Length, Is.EqualTo(1));
+            Assert.That(frame.Chess[0].HpProgress, Is.EqualTo(0.6f).Within(0.0001f));
+        }
+    }
+
+    /// <summary>验证 CreateRenderSnapshot 直接使用当前 HP 与 MaxHp。</summary>
+    [Test]
+    public void CreateRenderSnapshotUsesHpOverMaxHp()
+    {
+        var chess = new ChessController(CreateConfig(1, 100));
+        chess.RuntimeData.Hp = 40;
+        ChessRenderSnapshot snapshot = chess.CreateRenderSnapshot();
+        Assert.That(snapshot.HpProgress, Is.EqualTo(0.4f).Within(0.0001f));
+    }
+
+    /// <summary>验证 MaxHp 非法时快照进度按满血处理。</summary>
+    [Test]
+    public void CreateRenderSnapshotTreatsInvalidMaxHpAsFull()
+    {
+        var chess = new ChessController(CreateConfig(1, 0));
+        ChessRenderSnapshot snapshot = chess.CreateRenderSnapshot();
+        Assert.That(snapshot.HpProgress, Is.EqualTo(1f));
     }
 
     /// <summary>验证死亡棋子和命中回收后的子弹不会出现在渲染帧中。</summary>

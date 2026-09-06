@@ -20,13 +20,17 @@ namespace AutoChess.Render
         /// <summary>棋盘 XZ 朝向；零向量表示保持原朝向。</summary>
         public readonly Vector2 Forward;
 
+        /// <summary>当前生命值相对 MaxHp 的进度；MaxHp 非法时为 1。</summary>
+        public readonly float HpProgress;
+
         /// <summary>创建棋子渲染快照。</summary>
-        public ChessRenderSnapshot(int uniqueId, int campId, Vector2 position, Vector2 forward)
+        public ChessRenderSnapshot(int uniqueId, int campId, Vector2 position, Vector2 forward, float hpProgress = 1f)
         {
             UniqueId = uniqueId;
             CampId = campId;
             Position = position;
             Forward = forward;
+            HpProgress = hpProgress;
         }
     }
 

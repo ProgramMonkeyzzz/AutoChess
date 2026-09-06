@@ -4,15 +4,18 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using AutoChess.Editor;
 using BehaviorTree;
 using NUnit.Framework;
+using ParadoxNotion;
+using ParadoxNotion.Design;
 using Sirenix.OdinInspector.Editor;
 using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖 NodeCanvas 行为树编辑适配层、编译器和 bytes 导出流程。
+/// 覆盖 NodeCanvas 行为树编辑适配层、编译器和 bytes 导出流程，以及图节点类型颜色、正文标签和警告。
 /// </summary>
 public class BehaviorTreeGraphTests
 {
@@ -245,6 +248,194 @@ public class BehaviorTreeGraphTests
         {
             UnityEngine.Object.DestroyImmediate(graph);
         }
+    }
+
+    /// <summary>
+    /// 验证各图节点类型具有互不相同的颜色、图标、说明，并且标题图标对齐到左侧。
+    /// </summary>
+    [Test]
+    public void GraphNodesUseDistinctTypeColorsAndIcons()
+    {
+        AssertTypePresentation(
+            typeof(BehaviorTreeRootGraphNode),
+            BehaviorTreeGraphNodePresentation.RootColorHex,
+            BehaviorTreeGraphNodePresentation.RootIconName);
+        AssertTypePresentation(
+            typeof(BehaviorTreeSequenceGraphNode),
+            BehaviorTreeGraphNodePresentation.SequenceColorHex,
+            BehaviorTreeGraphNodePresentation.SequenceIconName);
+        AssertTypePresentation(
+            typeof(BehaviorTreeSelectorGraphNode),
+            BehaviorTreeGraphNodePresentation.SelectorColorHex,
+            BehaviorTreeGraphNodePresentation.SelectorIconName);
+        AssertTypePresentation(
+            typeof(BehaviorTreeParallelGraphNode),
+            BehaviorTreeGraphNodePresentation.ParallelColorHex,
+            BehaviorTreeGraphNodePresentation.ParallelIconName);
+        AssertTypePresentation(
+            typeof(BehaviorTreeActionGraphNode),
+            BehaviorTreeGraphNodePresentation.ActionColorHex,
+            BehaviorTreeGraphNodePresentation.ActionIconName);
+        AssertTypePresentation(
+            typeof(BehaviorTreeConditionalGraphNode),
+            BehaviorTreeGraphNodePresentation.ConditionalColorHex,
+            BehaviorTreeGraphNodePresentation.ConditionalIconName);
+
+        var colors = new HashSet<string>
+        {
+            BehaviorTreeGraphNodePresentation.RootColorHex,
+            BehaviorTreeGraphNodePresentation.SequenceColorHex,
+            BehaviorTreeGraphNodePresentation.SelectorColorHex,
+            BehaviorTreeGraphNodePresentation.ParallelColorHex,
+            BehaviorTreeGraphNodePresentation.ActionColorHex,
+            BehaviorTreeGraphNodePresentation.ConditionalColorHex
+        };
+        Assert.That(colors.Count, Is.EqualTo(6));
+
+        var graph = ScriptableObject.CreateInstance<BehaviorTreeGraphAsset>();
+        try
+        {
+            Assert.That(graph.GetUniqueRootNode().iconAlignment, Is.EqualTo(Alignment2x2.Left));
+            Assert.That(
+                graph.AddNode<BehaviorTreeSelectorGraphNode>(Vector2.zero).iconAlignment,
+                Is.EqualTo(Alignment2x2.Left));
+            Assert.That(
+                graph.AddNode<BehaviorTreeActionGraphNode>(Vector2.zero).iconAlignment,
+                Is.EqualTo(Alignment2x2.Left));
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(graph);
+        }
+
+        var flags = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+        Assert.That(typeof(BehaviorTreeGraphNode).GetMethod("OnNodeGUI", flags), Is.Not.Null);
+        Assert.That(typeof(BehaviorTreeGraphNode).GetMethod("GetWarningOrError", flags), Is.Not.Null);
+        Assert.That(
+            typeof(BehaviorTreeGraphNode).GetMethod(
+                "GetConnectionInfo",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly),
+            Is.Not.Null);
+    }
+
+    /// <summary>
+    /// 验证节点正文显示类型标签、Parallel 策略、叶节点 LogicId/参数，以及连线序号和警告。
+    /// </summary>
+    [Test]
+    public void NodeBodyShowsTypeLogicAndWarnings()
+    {
+        var graph = ScriptableObject.CreateInstance<BehaviorTreeGraphAsset>();
+        try
+        {
+            var root = graph.GetUniqueRootNode();
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.GetTypeLabel(root),
+                Is.EqualTo(BehaviorTreeGraphNodePresentation.RootTypeLabel));
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.BuildBodyText(root),
+                Does.Contain(BehaviorTreeGraphNodePresentation.RootTypeLabel));
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.GetWarningOrError(root),
+                Is.EqualTo(BehaviorTreeGraphNodePresentation.MissingChildrenWarning));
+
+            var selector = graph.AddNode<BehaviorTreeSelectorGraphNode>(new Vector2(0f, 80f));
+            selector.name = "RootSelector";
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.GetTypeLabel(selector),
+                Is.EqualTo(BehaviorTreeGraphNodePresentation.SelectorTypeLabel));
+            var selectorBody = BehaviorTreeGraphNodePresentation.BuildBodyText(selector);
+            Assert.That(selectorBody, Does.Contain(BehaviorTreeGraphNodePresentation.SelectorTypeLabel));
+            Assert.That(selectorBody, Does.Not.Contain("RootSelector"));
+            Assert.That(selector.GetConnectionInfo(0), Is.Null);
+
+            var sequence = graph.AddNode<BehaviorTreeSequenceGraphNode>(new Vector2(-120f, 160f));
+            sequence.name = "RetargetIfDead";
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.BuildBodyText(sequence),
+                Does.Contain(BehaviorTreeGraphNodePresentation.SequenceTypeLabel));
+
+            var parallel = graph.AddNode<BehaviorTreeParallelGraphNode>(new Vector2(120f, 160f));
+            parallel.successPolicy = ParallelSuccessPolicy.Any;
+            parallel.failurePolicy = ParallelFailurePolicy.All;
+            var parallelBody = BehaviorTreeGraphNodePresentation.BuildBodyText(parallel);
+            Assert.That(parallelBody, Does.Contain(BehaviorTreeGraphNodePresentation.ParallelTypeLabel));
+            Assert.That(parallelBody, Does.Contain("Success Any"));
+            Assert.That(parallelBody, Does.Contain("Failure All"));
+
+            var namedAction = graph.AddNode<BehaviorTreeActionGraphNode>(new Vector2(-200f, 240f));
+            namedAction.name = "AttackTarget";
+            namedAction.LogicId = "AttackTarget";
+            var namedActionBody = BehaviorTreeGraphNodePresentation.BuildBodyText(namedAction);
+            Assert.That(namedActionBody, Does.Contain(BehaviorTreeGraphNodePresentation.ActionTypeLabel));
+            Assert.That(namedActionBody, Does.Not.Contain("AttackTarget"));
+
+            var aliasedAction = graph.AddNode<BehaviorTreeActionGraphNode>(new Vector2(0f, 240f));
+            aliasedAction.name = "ReselectTarget";
+            aliasedAction.LogicId = "SelectTarget";
+            aliasedAction.Parameters.Add(new BehaviorTreeEditorParameter
+            {
+                key = "Mode",
+                type = BehaviorTreeParameterType.Int,
+                intValue = 0
+            });
+            var aliasedBody = BehaviorTreeGraphNodePresentation.BuildBodyText(aliasedAction);
+            Assert.That(aliasedBody, Does.Contain(BehaviorTreeGraphNodePresentation.ActionTypeLabel));
+            Assert.That(aliasedBody, Does.Contain("SelectTarget"));
+            Assert.That(aliasedBody, Does.Contain("Mode=0"));
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.FormatParameter(aliasedAction.Parameters[0]),
+                Is.EqualTo("Mode=0"));
+
+            var emptyAction = graph.AddNode<BehaviorTreeActionGraphNode>(new Vector2(200f, 240f));
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.BuildBodyText(emptyAction),
+                Does.Contain("\u672a\u6307\u5b9a LogicId"));
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.GetWarningOrError(emptyAction),
+                Is.EqualTo(BehaviorTreeGraphNodePresentation.MissingLogicIdError));
+
+            var unknownConditional = graph.AddNode<BehaviorTreeConditionalGraphNode>(new Vector2(200f, 320f));
+            unknownConditional.LogicId = "MissingLogic";
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.GetTypeLabel(unknownConditional),
+                Is.EqualTo(BehaviorTreeGraphNodePresentation.ConditionalTypeLabel));
+            Assert.That(
+                BehaviorTreeGraphNodePresentation.GetWarningOrError(unknownConditional),
+                Is.EqualTo(BehaviorTreeGraphNodePresentation.UnknownLogicIdWarning));
+
+            BehaviorTreeLogicCatalog.RegisterAction("AttackTarget", "Attack");
+            BehaviorTreeLogicCatalog.RegisterAction("SelectTarget", "Select");
+            Assert.That(BehaviorTreeGraphNodePresentation.GetWarningOrError(namedAction), Is.Null);
+            Assert.That(BehaviorTreeGraphNodePresentation.GetWarningOrError(aliasedAction), Is.Null);
+
+            graph.ConnectNodes(selector, sequence);
+            Assert.That(selector.GetConnectionInfo(0), Is.Null);
+            graph.ConnectNodes(selector, parallel);
+            Assert.That(selector.GetConnectionInfo(0), Is.EqualTo("1"));
+            Assert.That(selector.GetConnectionInfo(1), Is.EqualTo("2"));
+            Assert.That(root.GetConnectionInfo(0), Is.Null);
+            Assert.That(namedAction.GetConnectionInfo(0), Is.Null);
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(graph);
+        }
+    }
+
+    /// <summary>
+    /// 断言图节点类型带有匹配的颜色、图标和说明属性。
+    /// </summary>
+    private static void AssertTypePresentation(Type type, string hexColor, string iconName)
+    {
+        var color = type.GetCustomAttribute<ColorAttribute>();
+        Assert.That(color, Is.Not.Null, type.Name + " missing Color");
+        Assert.That(color.hexColor, Is.EqualTo(hexColor));
+
+        var icon = type.GetCustomAttribute<ParadoxNotion.Design.IconAttribute>();
+        Assert.That(icon, Is.Not.Null, type.Name + " missing Icon");
+        Assert.That(icon.iconName, Is.EqualTo(iconName));
+
+        Assert.That(type.GetCustomAttribute<ParadoxNotion.Design.DescriptionAttribute>(), Is.Not.Null, type.Name + " missing Description");
     }
 
     /// <summary>

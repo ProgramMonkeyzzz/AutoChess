@@ -47,6 +47,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _chessTransform: {fileID: 100001}
+  _hpTransform: {fileID: 4351951690059789645}
   _height: 0
 --- !u!1 &2814827363031128448
 GameObject:

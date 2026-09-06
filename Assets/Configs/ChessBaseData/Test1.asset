@@ -14,13 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ConfigId: 1
   Name: "\u8FDC\u7A0B"
-  MaxHp: 50
+  MaxHp: 500
   Atk: 30
   Range: 3
   MoveSpeed: 10
   AtkSpeed: 2
   WindUpTime: 1
-  BulletSpeed: 1
+  BulletSpeed: 2
   MovementEnterBehaviorTree: 
   MovementStayBehaviorTree: ChessCombat
   MovementExitBehaviorTree: 

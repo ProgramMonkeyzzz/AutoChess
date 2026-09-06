@@ -6,12 +6,13 @@ using AutoChess.Render;
 using AutoChess.Utils;
 using Chess;
 using Config;
+using UI;
 using UnityEngine;
 
 namespace AutoChess
 {
     /// <summary>
-    /// 全局 Unity 主线程管理器，负责 RVO Job 调度、战斗线程时钟、渲染快照消费和日志输出。
+    /// 全局 Unity 主线程管理器，负责 RVO Job 调度、战斗线程时钟、渲染快照消费、血条同步和日志输出。
     /// </summary>
     public sealed class GameManager : MonoBehaviour
     {
@@ -151,7 +152,7 @@ namespace AutoChess
             return uniqueId;
         }
 
-        /// <summary>在主线程注销棋子的导航代理与视图，并排队移出战斗阵营。</summary>
+        /// <summary>在主线程注销棋子的导航代理、视图和血条，并排队移出战斗阵营。</summary>
         public void UnregisterChess(int uniqueId)
         {
             EnsureMainThread();
@@ -164,6 +165,7 @@ namespace AutoChess
             if (uniqueId > 0)
             {
                 RenderManager?.RemoveChessView(uniqueId);
+                UIHp.Instance?.RemoveChessHp(uniqueId);
             }
 
             BattleManager?.UnregisterChess(uniqueId);
@@ -187,7 +189,7 @@ namespace AutoChess
             view.SetForward(Vector2.up);
         }
 
-        /// <summary>消费战斗线程发布的最新渲染帧并同步视图。</summary>
+        /// <summary>消费战斗线程发布的最新渲染帧并同步视图与受伤棋子血条。</summary>
         private void ApplyRenderFrame()
         {
             if (BattleManager == null || RenderManager == null)
@@ -198,6 +200,7 @@ namespace AutoChess
             if (BattleManager.TryConsumeRenderFrame(out BattleRenderFrame frame))
             {
                 RenderManager.ApplyFrame(frame);
+                UIHp.Instance?.ApplyRenderFrame(frame, RenderManager);
             }
         }
 

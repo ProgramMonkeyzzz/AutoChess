@@ -191,8 +191,8 @@ namespace AutoChess.Editor
         /// <summary>节点注释显示在节点右侧。</summary>
         public override Alignment2x2 commentsAlignment => Alignment2x2.Right;
 
-        /// <summary>节点图标使用 NodeCanvas 默认位置。</summary>
-        public override Alignment2x2 iconAlignment => Alignment2x2.Default;
+        /// <summary>节点图标显示在标题侧边，便于同时保留自定义名称。</summary>
+        public override Alignment2x2 iconAlignment => Alignment2x2.Left;
 
         /// <summary>
         /// 禁止任何节点连接到 Root，避免形成反向或多根结构。
@@ -201,6 +201,28 @@ namespace AutoChess.Editor
         {
             return !(targetNode is BehaviorTreeRootGraphNode);
         }
+
+        /// <summary>在节点窗口内显示类型标签与关键参数。</summary>
+        protected override void OnNodeGUI()
+        {
+            var body = BehaviorTreeGraphNodePresentation.BuildBodyText(this);
+            if (!string.IsNullOrEmpty(body))
+            {
+                GUILayout.Label(body, GUILayout.MinWidth(120f));
+            }
+        }
+
+        /// <summary>复合节点的出边显示从 1 开始的子节点序号。</summary>
+        public override string GetConnectionInfo(int index)
+        {
+            return BehaviorTreeGraphNodePresentation.GetConnectionInfo(this, index);
+        }
+
+        /// <summary>在图上显示 LogicId 或缺子节点等编辑器警告。</summary>
+        protected override string GetWarningOrError()
+        {
+            return BehaviorTreeGraphNodePresentation.GetWarningOrError(this);
+        }
     }
 
     /// <summary>
@@ -208,6 +230,9 @@ namespace AutoChess.Editor
     /// </summary>
     [DoNotList]
     [ProtectedSingleton]
+    [Description("行为树唯一入口，最多连接一个子节点。")]
+    [ParadoxNotion.Design.Icon(BehaviorTreeGraphNodePresentation.RootIconName)]
+    [Color(BehaviorTreeGraphNodePresentation.RootColorHex)]
     public sealed class BehaviorTreeRootGraphNode : BehaviorTreeGraphNode
     {
         /// <summary>Root 不允许父节点。</summary>
@@ -234,6 +259,9 @@ namespace AutoChess.Editor
     /// </summary>
     [Name("Sequence")]
     [Category("Composites")]
+    [Description("按从左到右顺序执行子节点，全部成功才成功，任一失败即失败。")]
+    [ParadoxNotion.Design.Icon(BehaviorTreeGraphNodePresentation.SequenceIconName)]
+    [Color(BehaviorTreeGraphNodePresentation.SequenceColorHex)]
     public sealed class BehaviorTreeSequenceGraphNode : BehaviorTreeCompositeGraphNode
     {
     }
@@ -243,6 +271,9 @@ namespace AutoChess.Editor
     /// </summary>
     [Name("Selector")]
     [Category("Composites")]
+    [Description("按从左到右尝试子节点，任一成功即成功，全部失败才失败。")]
+    [ParadoxNotion.Design.Icon(BehaviorTreeGraphNodePresentation.SelectorIconName)]
+    [Color(BehaviorTreeGraphNodePresentation.SelectorColorHex)]
     public sealed class BehaviorTreeSelectorGraphNode : BehaviorTreeCompositeGraphNode
     {
     }
@@ -252,6 +283,9 @@ namespace AutoChess.Editor
     /// </summary>
     [Name("Parallel")]
     [Category("Composites")]
+    [Description("同时执行子节点，按成功/失败策略聚合结果。")]
+    [ParadoxNotion.Design.Icon(BehaviorTreeGraphNodePresentation.ParallelIconName)]
+    [Color(BehaviorTreeGraphNodePresentation.ParallelColorHex)]
     public sealed class BehaviorTreeParallelGraphNode : BehaviorTreeCompositeGraphNode
     {
         /// <summary>Parallel 成功聚合策略。</summary>
@@ -398,6 +432,9 @@ namespace AutoChess.Editor
     /// </summary>
     [Name("Action")]
     [Category("Leaves")]
+    [Description("执行一次 Action 逻辑并立即返回结果。")]
+    [ParadoxNotion.Design.Icon(BehaviorTreeGraphNodePresentation.ActionIconName)]
+    [Color(BehaviorTreeGraphNodePresentation.ActionColorHex)]
     public sealed class BehaviorTreeActionGraphNode : BehaviorTreeLeafGraphNode
     {
         /// <summary>绑定运行时 Action 工厂的 LogicId。</summary>
@@ -449,6 +486,9 @@ namespace AutoChess.Editor
     /// </summary>
     [Name("Conditional")]
     [Category("Leaves")]
+    [Description("判定条件并返回 Success 或 Failure。")]
+    [ParadoxNotion.Design.Icon(BehaviorTreeGraphNodePresentation.ConditionalIconName)]
+    [Color(BehaviorTreeGraphNodePresentation.ConditionalColorHex)]
     public sealed class BehaviorTreeConditionalGraphNode : BehaviorTreeLeafGraphNode
     {
         /// <summary>绑定运行时 Conditional 工厂的 LogicId。</summary>

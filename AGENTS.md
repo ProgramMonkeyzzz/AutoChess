@@ -6,7 +6,7 @@
 
 ### Core Systems
 
-- **GameManager**: 全局单例管理器，运行在 Unity 主线程，负责加载棋子配置和行为树、创建 `NavigationManager` 和 `RenderManager`、调度 `SimulatorBurst` Job、推进 BattleManager 固定时钟、消费渲染快照并输出线程日志
+- **GameManager**: 全局单例管理器，运行在 Unity 主线程，负责加载棋子配置和行为树、创建 `NavigationManager` 和 `RenderManager`、调度 `SimulatorBurst` Job、推进 BattleManager 固定时钟、消费渲染快照、同步血条并输出线程日志
 - **BattleManager**: 战斗系统的核心管理器，处理战斗流程
   - 构造时初始化 `CampManager`、`ChessBoard`、`BulletManager` 、空的 `ChessConfigRepository` 和空的 `BehaviorTreeRepository`（均不自动从 Resources 加载）
   - `RegisterChess(campId, configId, position)` 按配置工厂创建棋子并立即返回 `UniqueId`；出生点由注册参数写入
@@ -71,13 +71,14 @@
 表现层位于 `Assets/Scripts/Battle/Render/`，命名空间为 `AutoChess.Render`，只在 Unity 主线程运行：
 
 - `BattleManager` 每个固定步在阵营和子弹 Tick 之后发布 `BattleRenderFrame`，只保留最新一帧
-- 快照仅包含存活棋子和活动子弹的 `UniqueId`/`BulletId`、阵营、XZ 位置和 XZ 朝向；死亡棋子与已命中回收的子弹不会进入快照
-- `GameManager.RegisterChess(campId, configId, position)` 在主线程查配置、创建导航代理并立刻创建棋子视图，成功返回 `UniqueId`；查不到配置或代理无效则返回 `0` 且不建代理/视图
-- `GameManager.UnregisterChess(uniqueId)` 先在主线程摘掉代理和视图，再排队从战斗中注销
-- `GameManager` 在消费导航输入后把最新帧交给 `RenderManager.ApplyFrame`
-- `RenderManager` 从 `Resources/Prefabs/ChessView` 与 `Resources/Prefabs/BulletView` 实例化视图，按快照 upsert，并销毁快照中消失的棋子/子弹
-- `ChessView`/`BulletView` 将棋盘坐标映射为世界坐标 `(x, height, z)`，并在 XZ 平面设置朝向
-- SampleScene 含 100x100 的 `ChessBoard` Plane、俯视相机和空的 `BattleTestRunner`；Play 后按场景阵营列表调用 `GameManager.RegisterChess` 生成棋子
+- 快照含存活棋子/活动子弹的 id、阵营、XZ 位置朝向，以及棋子 `HpProgress`；死亡棋子与已命中子弹不入快照
+- `GameManager.RegisterChess` 主线程查配置、建导航代理和棋子视图，成功返回 `UniqueId`；失败返回 `0`
+- `GameManager.UnregisterChess` 先摘代理、视图和血条，再排队从战斗注销
+- `GameManager` 消费导航输入后把最新帧交给 `RenderManager.ApplyFrame`，再交给 `UIHp.ApplyRenderFrame`
+- `RenderManager` 从 `Resources/Prefabs/ChessView` 与 `BulletView` 实例化视图，按快照 upsert，并销毁快照中消失的棋子/子弹
+- `ChessView`/`BulletView` 将棋盘坐标映射为世界坐标 `(x, height, z)`；`ChessView.HpTransform` 是血条世界锚点
+- `UIHp` 只为 `0 < HpProgress < 1` 的棋子在 Canvas 下生成 `UIHpBar`，按 `HpTransform` 做世界到屏幕换算，不把血条挂到棋子节点下
+- SampleScene 含 100x100 `ChessBoard`、俯视相机、Screen Space-Camera 的 `UIHp` 和空的 `BattleTestRunner`
 
 
 ### Chess FSM
@@ -126,6 +127,7 @@
 - 源资产默认保存在 `Assets/Configs/BehaviorTrees/`，bytes 默认保存在 `Assets/Resources/Configs/BehaviorTrees/`
 - Action/Conditional 的 LogicId 和参数元数据通过 `BehaviorTreeLogicCatalog` 注册；编辑器参数当前支持 `string`、`int`、`float` 和 `bool`
 - 叶节点 Inspector 用参数列表宿主创建 Odin `PropertyTree` 并跨 GraphEditor 的 Layout/Repaint 缓存；禁止把空 `List` 当作多目标传入 `PropertyTree.Create(IList)`
+- 图节点按类型使用不同标题颜色、左侧图标和窗口内类型标签；叶节点额外显示 LogicId 与参数，复合节点多子连线显示从 1 开始的序号。自定义节点名仍用于编译导出，不覆盖类型识别。
 - `ChessBehaviorTreeLogic` 在编辑器/运行时域加载时幂等注册棋子 Action/Conditional，分类为 `Chess`
 - 棋子风筝图源资产为 `Assets/Configs/BehaviorTrees/ChessCombat.asset`；菜单 `Tools > AutoChess > Behavior Tree > Rebuild Chess Combat Asset` 只重建该图且不导出 bytes。现有 `BehaviorTree.asset` 示例图保留。Test0/Test1 的 `MovementStayBehaviorTree` 填 `ChessCombat`，创建棋子时按配置部署
 
@@ -151,11 +153,12 @@
 - `Assets/Scripts/Config/`: 运行时配置数据结构
 - `Assets/Scripts/BehaviorTree/`: 纯 C# 行为树运行时、数据定义、黑板和二进制序列化
 - `Assets/Scripts/Editor/`: 编辑器工具和 ScriptableObject 定义
+- `Assets/Scripts/UI/`: 主线程血条 UI（`UIHp` / `UIHpBar`）
 - `Assets/Scripts/Utils/`: 通用工具类（如 Singleton）
 - `Assets/Tests/Editor/`: Unity EditMode 测试
 - `Assets/Configs/`: ScriptableObject 配置资源（源文件）
 - `Assets/Resources/Configs/`: 导出的二进制配置（运行时加载）
-- `Assets/Resources/Prefabs/`: 棋子和子弹表现预制体
+- `Assets/Resources/Prefabs/`: 棋子、子弹和血条表现预制体
 - `Assets/Plugins/UniTask/`: UniTask 异步库
 - `Packages/com.arongranberg.astar/`: A* 寻路包
 
@@ -178,10 +181,11 @@
   - `ChessMovementControllerTests` 覆盖移动命令、远离目标刷新/贴边、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
-  - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建和 BattleManager 帧发布
+  - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建、BattleManager 帧发布和 `HpProgress`
+  - `UIHpTests` 覆盖受伤棋子血条创建/满血清除、父子关系以及 `HpTransform` 世界到屏幕同步
   - `BattleTestSpawnerTests` 覆盖空布阵、多阵营顺序、重复阵营、非法/越界坐标跳过，以及注册失败不影响后续棋子
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
-  - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog、bytes 导出往返，以及叶节点空参数列表的 Odin PropertyTree 宿主绘制
+  - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog、bytes 导出往返，以及叶节点空参数列表的 Odin PropertyTree 宿主绘制与节点类型颜色/图标/正文标签和警告
   - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、攻击冷却、运行时射程和 LogicId 注册
   - `ChessBehaviorActionTests` 覆盖棋子 Action 的发令即 Success/Failure、攻击/移动/`StopMovement` 副作用、`SelectTarget` 索敌和 LogicId 注册
   - `ChessTargetSelectorTests` 覆盖索敌枚举分发、运行时射程/攻击力、跳过死亡敌人、只剩尸体清空目标和非法枚举保持原目标
@@ -214,6 +218,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 
 - `AutoChess`: 游戏全局管理器
 - `AutoChess.Render`: 主线程战斗表现层
+- `UI`: 主线程血条 UI
 - `AutoChess.Sandbox`: SampleScene 战斗测试布阵
 - `AutoChess.Utils`: 通用工具类
 - `AutoChess.Editor`: 编辑器工具
@@ -269,7 +274,8 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 叶节点 Inspector 不能把参数 `List` 直接传给 `PropertyTree.Create(IList)`；空列表会抛出 `There must be at least one target` 并打乱 GraphEditor 的 GUILayout
 - 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
 - 构建棋子行为树时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 `BehaviorTreeRunner` 的 owner 传该 `ChessController`；目标 Conditional/攻击/移动 Action 无索敌目标时全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 按 Int `Mode` 索敌并跳过死亡敌人，选中存活敌人才 Success。射程 Conditional 走 `GetCurrentRange`；Action 发令成功后立即 Success，持续追踪/远离由移动控制器负责。创建棋子按 `ChessBaseData` 的 9 个树名部署，空白不挂树，缺树只跳过该槽并打错误日志。风筝图只提交 `Assets/Configs/BehaviorTrees/ChessCombat.asset`，重建菜单不导出 `.bytes`；Test0/Test1 的移动 Stay 填 `ChessCombat`
-- 战斗线程不得直接读写 `ChessView`/`BulletView`；表现同步只走 `BattleRenderFrame`，死亡棋子和命中子弹从快照消失后由 `RenderManager` 销毁视图
+- 战斗线程不得直接读写 `ChessView`/`BulletView`/`UIHpBar`；表现同步只走 `BattleRenderFrame`，死亡棋子和命中子弹从快照消失后由 `RenderManager` 销毁视图，血条由 `UIHp` 销毁
+- 血条必须挂在 `UIHp` 下并用 `Camera.main` + Canvas 相机做世界到屏幕换算，不得把 `UIHpBar` 设为 `_hpTransform` 子节点；满血或死亡不显示
 - SampleScene 的 `BattleTestRunner` 默认空列表，Play 后不会自动生成棋子，需在 Inspector 填写阵营和出生点
 - 棋子出生点由 `RegisterChess(campId, configId, position)` 写入，调用方不必先 `new ChessController`；查不到 `ConfigId` 时主线程返回 `0`，战斗线程只记录错误并跳过
 - 创建棋子时必须 `Clone` 一份 `ChessBaseData`，避免多个实例共享可变配置

@@ -250,7 +250,20 @@ namespace Chess
             Vector2 forward = ResolveRenderForward(position);
             _lastRenderPosition = position;
             _hasLastRenderPosition = true;
-            return new ChessRenderSnapshot(UniqueId, _camp, position, forward);
+            return new ChessRenderSnapshot(UniqueId, _camp, position, forward, ResolveHpProgress());
+        }
+
+        /// <summary>
+        /// 计算当前生命值相对 MaxHp 的进度；MaxHp 非法时返回 1。
+        /// </summary>
+        private float ResolveHpProgress()
+        {
+            if (_chessBaseData == null || _chessBaseData.MaxHp <= 0 || _chessRuntimeData == null)
+            {
+                return 1f;
+            }
+
+            return (float)_chessRuntimeData.Hp / _chessBaseData.MaxHp;
         }
 
         /// <summary>
