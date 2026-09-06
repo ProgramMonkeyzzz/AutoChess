@@ -120,7 +120,7 @@ namespace Chess
             _lastAvoidingAgents = false;
             TargetChess = null;
             _commandVersion++;
-            _chessController.EnterMovementState();
+            _chessController.Fsm.CheckCurrentStateTransition();
             return true;
         }
 
@@ -152,7 +152,7 @@ namespace Chess
                 return false;
             }
 
-            _chessController.EnterMovementState();
+            _chessController.Fsm.CheckCurrentStateTransition();
             return true;
         }
 
@@ -184,7 +184,7 @@ namespace Chess
                 return false;
             }
 
-            _chessController.EnterMovementState();
+            _chessController.Fsm.CheckCurrentStateTransition();
             return true;
         }
 

@@ -28,7 +28,7 @@ namespace Chess
                 _chessController.RuntimeData.Hp = 0;
             }
 
-            _chessController.CheckDeathStateTransition();
+            _chessController.Fsm.CheckCurrentStateTransition();
         }
     }
 }

@@ -169,30 +169,6 @@ namespace Chess
         }
 
         /// <summary>
-        /// 在移动命令成功建立后检查当前状态转换，满足条件时切回移动状态。
-        /// </summary>
-        internal void EnterMovementState()
-        {
-            _fsm.CheckCurrentStateTransition();
-        }
-
-        /// <summary>
-        /// 在攻击流程开始后检查当前状态转换，满足条件时切入攻击状态。
-        /// </summary>
-        internal void EnterAttackState()
-        {
-            _fsm.CheckCurrentStateTransition();
-        }
-
-        /// <summary>
-        /// 在受到伤害后立即检查当前状态转换，满足条件时切入死亡状态。
-        /// </summary>
-        internal void CheckDeathStateTransition()
-        {
-            _fsm.CheckCurrentStateTransition();
-        }
-
-        /// <summary>
         /// 判断棋子是否仍应出现在渲染快照中。
         /// </summary>
         internal bool IsAlive

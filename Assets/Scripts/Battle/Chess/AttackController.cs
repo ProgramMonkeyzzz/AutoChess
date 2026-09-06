@@ -180,7 +180,7 @@ namespace Chess
             // 先锁定前摇目标，使 MovementToAttack 在检查转换时成立。
             _windUpTarget = target;
             _windUpRemaining = _chessController.BaseData.WindUpTime;
-            _chessController.EnterAttackState();
+            _chessController.Fsm.CheckCurrentStateTransition();
 
             if (_chessController.BaseData.WindUpTime <= 0f)
             {
