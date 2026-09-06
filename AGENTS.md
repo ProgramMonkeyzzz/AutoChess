@@ -77,7 +77,7 @@
 - `GameManager` 在消费导航输入后把最新帧交给 `RenderManager.ApplyFrame`
 - `RenderManager` 从 `Resources/Prefabs/ChessView` 与 `Resources/Prefabs/BulletView` 实例化视图，按快照 upsert，并销毁快照中消失的棋子/子弹
 - `ChessView`/`BulletView` 将棋盘坐标映射为世界坐标 `(x, height, z)`，并在 XZ 平面设置朝向
-- SampleScene 含 100x100 的 `ChessBoard` Plane 和俯视相机，不自动生成棋子
+- SampleScene 含 100x100 的 `ChessBoard` Plane、俯视相机和空的 `BattleTestRunner`；Play 后按场景阵营列表调用 `GameManager.RegisterChess` 生成棋子
 
 
 ### Chess FSM
@@ -147,6 +147,7 @@
     - `Behavior/`: 棋子行为树 Action 与 Conditional
   - `Camp/`: 阵营管理逻辑
   - `Render/`: 主线程棋子/子弹表现层
+  - `Sandbox/`: SampleScene 战斗测试布阵
 - `Assets/Scripts/Config/`: 运行时配置数据结构
 - `Assets/Scripts/BehaviorTree/`: 纯 C# 行为树运行时、数据定义、黑板和二进制序列化
 - `Assets/Scripts/Editor/`: 编辑器工具和 ScriptableObject 定义
@@ -162,7 +163,7 @@
 
 ### Running the Project
 
-在 Unity Hub 中打开项目，等待导入完成后点击 Play 按钮运行场景 `Assets/Scenes/SampleScene.unity`。
+在 Unity Hub 中打开项目，等待导入完成后打开 `Assets/Scenes/SampleScene.unity`。在 `BattleTestRunner` 上按阵营填写 `ConfigId` 与棋盘 XZ 坐标后点击 Play，即可看到表现层；空列表不会生成棋子。
 
 ### Unity Tests
 
@@ -178,6 +179,7 @@
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
   - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建和 BattleManager 帧发布
+  - `BattleTestSpawnerTests` 覆盖空布阵、多阵营顺序、重复阵营、非法/越界坐标跳过，以及注册失败不影响后续棋子
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
   - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog、bytes 导出往返，以及叶节点空参数列表的 Odin PropertyTree 宿主绘制
   - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、攻击冷却、运行时射程和 LogicId 注册
@@ -212,6 +214,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 
 - `AutoChess`: 游戏全局管理器
 - `AutoChess.Render`: 主线程战斗表现层
+- `AutoChess.Sandbox`: SampleScene 战斗测试布阵
 - `AutoChess.Utils`: 通用工具类
 - `AutoChess.Editor`: 编辑器工具
 - `Chess`: 棋子系统
@@ -267,6 +270,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
 - 构建棋子行为树时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 `BehaviorTreeRunner` 的 owner 传该 `ChessController`；目标 Conditional/攻击/移动 Action 无索敌目标时全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 按 Int `Mode` 索敌并跳过死亡敌人，选中存活敌人才 Success。射程 Conditional 走 `GetCurrentRange`；Action 发令成功后立即 Success，持续追踪/远离由移动控制器负责。创建棋子按 `ChessBaseData` 的 9 个树名部署，空白不挂树，缺树只跳过该槽并打错误日志。风筝图只提交 `Assets/Configs/BehaviorTrees/ChessCombat.asset`，重建菜单不导出 `.bytes`；Test0/Test1 的移动 Stay 填 `ChessCombat`
 - 战斗线程不得直接读写 `ChessView`/`BulletView`；表现同步只走 `BattleRenderFrame`，死亡棋子和命中子弹从快照消失后由 `RenderManager` 销毁视图
+- SampleScene 的 `BattleTestRunner` 默认空列表，Play 后不会自动生成棋子，需在 Inspector 填写阵营和出生点
 - 棋子出生点由 `RegisterChess(campId, configId, position)` 写入，调用方不必先 `new ChessController`；查不到 `ConfigId` 时主线程返回 `0`，战斗线程只记录错误并跳过
 - 创建棋子时必须 `Clone` 一份 `ChessBaseData`，避免多个实例共享可变配置
 - `BattleManager` 默认空的棋子配置和行为树仓库，测试需自行 `Register`；正式运行由 `GameManager.Awake` 调用两处 `LoadFromResources`。战斗线程不得 `Resources.Load` 行为树
