@@ -1,5 +1,7 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using BehaviorTree;
+using Chess;
 using UnityEngine;
 
 namespace Chess.Behavior
@@ -29,6 +31,12 @@ namespace Chess.Behavior
 
         /// <summary>向当前索敌目标反方向下达一次持续远离命令。</summary>
         public const string MoveAwayFromTarget = "MoveAwayFromTarget";
+
+        /// <summary>按指定方式从敌方中选择当前索敌目标。</summary>
+        public const string SelectTarget = "SelectTarget";
+
+        /// <summary>SelectTarget 的索敌方式参数 key。</summary>
+        public const string SelectTargetModeParameter = "Mode";
 
         /// <summary>编辑器逻辑目录中的分类名称。</summary>
         public const string CatalogCategory = "Chess";
@@ -65,6 +73,19 @@ namespace Chess.Behavior
             RegisterCatalogAction(AttackTarget, "攻击目标");
             RegisterCatalogAction(MoveToTarget, "向目标移动");
             RegisterCatalogAction(MoveAwayFromTarget, "向目标反方向移动");
+            RegisterCatalogAction(
+                SelectTarget,
+                "选择目标",
+                new[]
+                {
+                    new BehaviorTreeParameterDefinition(
+                        SelectTargetModeParameter,
+                        BehaviorTreeParameterType.Int,
+                        "索敌方式")
+                    {
+                        DefaultInt = (int)ChessTargetSelector.TargetSelectMode.Nearest
+                    }
+                });
         }
 
         /// <summary>
@@ -85,12 +106,44 @@ namespace Chess.Behavior
             registry.RegisterAction(AttackTarget, data => new AttackTargetAction());
             registry.RegisterAction(MoveToTarget, data => new MoveToTargetAction());
             registry.RegisterAction(MoveAwayFromTarget, data => new MoveAwayFromTargetAction());
+            registry.RegisterAction(SelectTarget, data => new SelectTargetAction(ReadSelectTargetMode(data)));
         }
 
         /// <summary>
-        /// 若目录中尚不存在指定 LogicId，则注册无参 Action 描述。
+        /// 从 Action 参数读取索敌方式；缺参或无法解析时使用最近敌人。
         /// </summary>
-        private static void RegisterCatalogAction(string logicId, string displayName)
+        private static ChessTargetSelector.TargetSelectMode ReadSelectTargetMode(ActionNodeData data)
+        {
+            if (data == null
+                || data.Parameters == null
+                || !data.Parameters.TryGetValue(SelectTargetModeParameter, out object raw)
+                || raw == null)
+            {
+                return ChessTargetSelector.TargetSelectMode.Nearest;
+            }
+
+            if (raw is ChessTargetSelector.TargetSelectMode mode)
+            {
+                return mode;
+            }
+
+            try
+            {
+                return (ChessTargetSelector.TargetSelectMode)Convert.ToInt32(raw);
+            }
+            catch (Exception)
+            {
+                return ChessTargetSelector.TargetSelectMode.Nearest;
+            }
+        }
+
+        /// <summary>
+        /// 若目录中尚不存在指定 LogicId，则注册 Action 描述。
+        /// </summary>
+        private static void RegisterCatalogAction(
+            string logicId,
+            string displayName,
+            IEnumerable<BehaviorTreeParameterDefinition> parameters = null)
         {
             if (BehaviorTreeLogicCatalog.TryGet(
                     BehaviorTreeLogicKind.Action,
@@ -103,7 +156,8 @@ namespace Chess.Behavior
             BehaviorTreeLogicCatalog.RegisterAction(
                 logicId,
                 displayName,
-                CatalogCategory);
+                CatalogCategory,
+                parameters);
         }
 
         /// <summary>

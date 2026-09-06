@@ -1,11 +1,35 @@
-﻿using System.Collections.Generic;
-using Camp;
+﻿using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Chess
 {
     public class ChessTargetSelector
     {
+        /// <summary>
+        /// 棋子索敌方式，数值与行为树 SelectTarget 的 Mode 参数一致。
+        /// </summary>
+        public enum TargetSelectMode
+        {
+            /// <summary>最近的敌方单位。</summary>
+            Nearest = 0,
+
+            /// <summary>最远的敌方单位。</summary>
+            Farthest = 1,
+
+            /// <summary>当前生命最低的敌方单位。</summary>
+            LowestHp = 2,
+
+            /// <summary>当前生命最高的敌方单位。</summary>
+            HighestHp = 3,
+
+            /// <summary>运行时射程最大的敌方单位。</summary>
+            LongestRange = 4,
+
+            /// <summary>当前攻击力最高的敌方单位。</summary>
+            HighestAtk = 5
+        }
+
         public ChessController SelectedChessController { get; private set; }
 
         private readonly ChessController _owner;
@@ -16,10 +40,45 @@ namespace Chess
         }
 
         /// <summary>
-        /// 获取所有敌方棋子
+        /// 按指定索敌方式选择当前目标；非法枚举时保持原目标并返回 false。
+        /// </summary>
+        public bool Select(TargetSelectMode mode)
+        {
+            switch (mode)
+            {
+                case TargetSelectMode.Nearest:
+                    FindNearestEnemy();
+                    return true;
+                case TargetSelectMode.Farthest:
+                    FindFarthestEnemy();
+                    return true;
+                case TargetSelectMode.LowestHp:
+                    FindLowestHpEnemy();
+                    return true;
+                case TargetSelectMode.HighestHp:
+                    FindHighestHpEnemy();
+                    return true;
+                case TargetSelectMode.LongestRange:
+                    FindLongestRangeEnemy();
+                    return true;
+                case TargetSelectMode.HighestAtk:
+                    FindHighestAtkEnemy();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// 获取所有敌方棋子；阵营数据缺失时返回空序列。
         /// </summary>
         private IEnumerable<ChessController> GetEnemyChesses()
         {
+            if (_owner == null || _owner.CampGroup == null || _owner.CampGroup.CampManager == null)
+            {
+                return Array.Empty<ChessController>();
+            }
+
             return _owner.CampGroup.CampManager.GetEnemyChesses(_owner.Camp);
         }
 

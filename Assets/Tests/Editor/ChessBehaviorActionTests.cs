@@ -1,4 +1,5 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
+using System.Collections.Generic;
 using System.Reflection;
 using AutoChess;
 using AutoChess.Navigation;
@@ -6,12 +7,13 @@ using BehaviorTree;
 using Chess;
 using Chess.Behavior;
 using Chess.FSM.State;
+using Camp;
 using Config;
 using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖棋子行为树 Action 的发令结果、移动/攻击副作用和 LogicId 注册。
+/// 覆盖棋子行为树 Action 的发令结果、移动/攻击副作用、SelectTarget 索敌和 LogicId 注册。
 /// </summary>
 public class ChessBehaviorActionTests
 {
@@ -55,11 +57,12 @@ public class ChessBehaviorActionTests
     }
 
     /// <summary>
-    /// 验证无 Owner 时三个 Action 全部失败。
+    /// 验证无 Owner 时棋子 Action 全部失败。
     /// </summary>
     [TestCase(ChessBehaviorTreeLogic.AttackTarget)]
     [TestCase(ChessBehaviorTreeLogic.MoveToTarget)]
     [TestCase(ChessBehaviorTreeLogic.MoveAwayFromTarget)]
+    [TestCase(ChessBehaviorTreeLogic.SelectTarget)]
     public void MissingOwnerFailsAllActions(string logicId)
     {
         Assert.That(TickAction(logicId, null), Is.EqualTo(NodeStatus.Failure));
@@ -313,7 +316,7 @@ public class ChessBehaviorActionTests
     }
 
     /// <summary>
-    /// 验证逻辑目录包含三个棋子 Action，且重复 Ensure 不会抛异常。
+    /// 验证逻辑目录包含棋子 Action，且重复 Ensure 不会抛异常。
     /// </summary>
     [Test]
     public void CatalogContainsChessActionsAndEnsureIsIdempotent()
@@ -323,6 +326,7 @@ public class ChessBehaviorActionTests
         AssertCatalogEntry(ChessBehaviorTreeLogic.AttackTarget, "攻击目标");
         AssertCatalogEntry(ChessBehaviorTreeLogic.MoveToTarget, "向目标移动");
         AssertCatalogEntry(ChessBehaviorTreeLogic.MoveAwayFromTarget, "向目标反方向移动");
+        AssertSelectTargetCatalogEntry();
     }
 
     /// <summary>
@@ -345,6 +349,93 @@ public class ChessBehaviorActionTests
     }
 
     /// <summary>
+    /// 验证无敌人时 SelectTarget 失败。
+    /// </summary>
+    [Test]
+    public void SelectTargetFailsWhenNoEnemies()
+    {
+        CampManager camps = CreateCampManager();
+        ChessController owner = camps.RegisterChess(1, 1, Vector2.zero);
+
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.SelectTarget, owner),
+            Is.EqualTo(NodeStatus.Failure));
+        Assert.That(owner.TargetSelector.SelectedChessController, Is.Null);
+    }
+
+    /// <summary>
+    /// 验证非法 Mode 失败且不改写当前索敌目标。
+    /// </summary>
+    [Test]
+    public void SelectTargetFailsForInvalidModeAndKeepsPreviousTarget()
+    {
+        Assert.That(
+            TickAction(
+                ChessBehaviorTreeLogic.SelectTarget,
+                _owner,
+                CreateModeParameters(99)),
+            Is.EqualTo(NodeStatus.Failure));
+        Assert.That(_owner.TargetSelector.SelectedChessController, Is.SameAs(_target));
+    }
+
+    /// <summary>
+    /// 验证存在敌人时 SelectTarget 成功并选中最近敌人。
+    /// </summary>
+    [Test]
+    public void SelectTargetSucceedsAndSelectsNearestEnemy()
+    {
+        CampManager camps = CreateCampManager();
+        ChessController owner = camps.RegisterChess(1, 1, Vector2.zero);
+        ChessController close = camps.RegisterChess(2, 1, new Vector2(1f, 0f));
+        camps.RegisterChess(2, 1, new Vector2(10f, 0f));
+
+        Assert.That(
+            TickAction(
+                ChessBehaviorTreeLogic.SelectTarget,
+                owner,
+                CreateModeParameters((int)ChessTargetSelector.TargetSelectMode.Nearest)),
+            Is.EqualTo(NodeStatus.Success));
+        Assert.That(owner.TargetSelector.SelectedChessController, Is.SameAs(close));
+    }
+
+    /// <summary>
+    /// 验证缺少 Mode 参数时按最近敌人索敌。
+    /// </summary>
+    [Test]
+    public void SelectTargetWithoutModeParameterSelectsNearest()
+    {
+        CampManager camps = CreateCampManager();
+        ChessController owner = camps.RegisterChess(1, 1, Vector2.zero);
+        ChessController close = camps.RegisterChess(2, 1, new Vector2(1f, 0f));
+        camps.RegisterChess(2, 1, new Vector2(10f, 0f));
+
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.SelectTarget, owner),
+            Is.EqualTo(NodeStatus.Success));
+        Assert.That(owner.TargetSelector.SelectedChessController, Is.SameAs(close));
+    }
+
+    /// <summary>
+    /// 验证 Register 后可以通过 LogicId 和 Mode 参数构建并 Tick SelectTarget。
+    /// </summary>
+    [Test]
+    public void RegisterBuildsAndTicksSelectTargetByLogicId()
+    {
+        CampManager camps = CreateCampManager();
+        ChessController owner = camps.RegisterChess(1, 1, Vector2.zero);
+        ChessController far = camps.RegisterChess(2, 1, new Vector2(10f, 0f));
+        camps.RegisterChess(2, 1, new Vector2(1f, 0f));
+
+        Assert.That(
+            TickAction(
+                ChessBehaviorTreeLogic.SelectTarget,
+                owner,
+                CreateModeParameters((int)ChessTargetSelector.TargetSelectMode.Farthest)),
+            Is.EqualTo(NodeStatus.Success));
+        Assert.That(owner.TargetSelector.SelectedChessController, Is.SameAs(far));
+    }
+
+    /// <summary>
     /// 绑定己方棋子的导航代理，供移动 Action 使用。
     /// </summary>
     private void BindOwnerMovement()
@@ -361,12 +452,24 @@ public class ChessBehaviorActionTests
     /// <summary>
     /// 使用指定 LogicId 构建单节点行为树并推进一次。
     /// </summary>
-    private static NodeStatus TickAction(string logicId, ChessController owner)
+    private static NodeStatus TickAction(
+        string logicId,
+        ChessController owner,
+        Dictionary<string, object> parameters = null)
     {
         var registry = new BehaviorTreeRegistry();
         ChessBehaviorTreeLogic.Register(registry);
+        var action = new ActionNodeData(logicId);
+        if (parameters != null)
+        {
+            foreach (KeyValuePair<string, object> pair in parameters)
+            {
+                action.Parameters[pair.Key] = pair.Value;
+            }
+        }
+
         var root = new RootNodeData();
-        root.AddChild(new ActionNodeData(logicId));
+        root.AddChild(action);
         var runner = new BehaviorTreeRunner(
             new BehaviorTreeDefinition(root),
             registry,
@@ -390,6 +493,60 @@ public class ChessBehaviorActionTests
         Assert.That(definition.DisplayName, Is.EqualTo(displayName));
         Assert.That(definition.Category, Is.EqualTo(ChessBehaviorTreeLogic.CatalogCategory));
         Assert.That(definition.Parameters, Is.Empty);
+    }
+
+    /// <summary>
+    /// 断言逻辑目录中已注册 SelectTarget 及其 Mode 参数。
+    /// </summary>
+    private static void AssertSelectTargetCatalogEntry()
+    {
+        Assert.That(
+            BehaviorTreeLogicCatalog.TryGet(
+                BehaviorTreeLogicKind.Action,
+                ChessBehaviorTreeLogic.SelectTarget,
+                out BehaviorTreeLogicDefinition definition),
+            Is.True);
+        Assert.That(definition.DisplayName, Is.EqualTo("选择目标"));
+        Assert.That(definition.Category, Is.EqualTo(ChessBehaviorTreeLogic.CatalogCategory));
+        Assert.That(definition.Parameters.Count, Is.EqualTo(1));
+        Assert.That(definition.Parameters[0].Key, Is.EqualTo(ChessBehaviorTreeLogic.SelectTargetModeParameter));
+        Assert.That(definition.Parameters[0].Type, Is.EqualTo(BehaviorTreeParameterType.Int));
+        Assert.That(definition.Parameters[0].DisplayName, Is.EqualTo("索敌方式"));
+        Assert.That(
+            definition.Parameters[0].DefaultInt,
+            Is.EqualTo((int)ChessTargetSelector.TargetSelectMode.Nearest));
+    }
+
+    /// <summary>
+    /// 创建 SelectTarget 的 Mode 参数字典。
+    /// </summary>
+    private static Dictionary<string, object> CreateModeParameters(int mode)
+    {
+        return new Dictionary<string, object>
+        {
+            { ChessBehaviorTreeLogic.SelectTargetModeParameter, mode }
+        };
+    }
+
+    /// <summary>
+    /// 创建已注册默认配置的阵营管理器。
+    /// </summary>
+    private static CampManager CreateCampManager()
+    {
+        var configs = new ChessConfigRepository();
+        configs.Register(new ChessBaseData
+        {
+            ConfigId = 1,
+            Name = "SelectTargetTest",
+            MaxHp = 100,
+            Atk = 1,
+            Range = 1f,
+            MoveSpeed = 1f,
+            AtkSpeed = 1f,
+            WindUpTime = 0f,
+            BulletSpeed = 0f
+        });
+        return new CampManager(configs);
     }
 
     /// <summary>
