@@ -86,6 +86,7 @@ namespace Chess
 
                     ApplyHit(target);
                     _cooldownRemaining = GetAttackInterval();
+                    _chessController.Fsm.CheckCurrentStateTransition();
                     continue;
                 }
 
@@ -188,6 +189,7 @@ namespace Chess
                 _windUpRemaining = 0f;
                 ApplyHit(target);
                 _cooldownRemaining = GetAttackInterval();
+                _chessController.Fsm.CheckCurrentStateTransition();
             }
 
             return true;
