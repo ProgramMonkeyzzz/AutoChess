@@ -8,7 +8,7 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖索敌枚举分发、运行时属性比较、阵营缺失和非法枚举行为。
+/// 覆盖索敌枚举分发、运行时属性比较、跳过死亡敌人、阵营缺失和非法枚举行为。
 /// </summary>
 public class ChessTargetSelectorTests
 {
@@ -134,16 +134,32 @@ public class ChessTargetSelectorTests
     }
 
     /// <summary>
-    /// 验证死亡敌人只要仍在阵营中就可以被选中。
+    /// 验证近处尸体加远处活人时，索敌会跳过尸体并选中活人。
     /// </summary>
     [Test]
-    public void DeadEnemyCanStillBeSelected()
+    public void SelectSkipsDeadEnemyAndPicksLivingEnemy()
     {
-        _farEnemy.RuntimeData.Hp = 0;
-        _farEnemy.Fsm.CheckCurrentStateTransition();
+        _closeEnemy.RuntimeData.Hp = 0;
+        _closeEnemy.Fsm.CheckCurrentStateTransition();
 
+        AssertSelected(ChessTargetSelector.TargetSelectMode.Nearest, _farEnemy);
         AssertSelected(ChessTargetSelector.TargetSelectMode.LowestHp, _farEnemy);
         AssertSelected(ChessTargetSelector.TargetSelectMode.Farthest, _farEnemy);
+    }
+
+    /// <summary>
+    /// 验证只剩死亡敌人时索敌成功但当前目标为空。
+    /// </summary>
+    [Test]
+    public void SelectClearsTargetWhenOnlyDeadEnemiesRemain()
+    {
+        _closeEnemy.RuntimeData.Hp = 0;
+        _farEnemy.RuntimeData.Hp = 0;
+        _closeEnemy.Fsm.CheckCurrentStateTransition();
+        _farEnemy.Fsm.CheckCurrentStateTransition();
+
+        Assert.That(_owner.TargetSelector.Select(ChessTargetSelector.TargetSelectMode.Nearest), Is.True);
+        Assert.That(_owner.TargetSelector.SelectedChessController, Is.Null);
     }
 
     /// <summary>

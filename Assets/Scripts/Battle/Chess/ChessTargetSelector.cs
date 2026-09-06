@@ -40,7 +40,7 @@ namespace Chess
         }
 
         /// <summary>
-        /// 按指定索敌方式选择当前目标；非法枚举时保持原目标并返回 false。
+        /// 按指定索敌方式选择当前存活目标；非法枚举时保持原目标并返回 false。
         /// </summary>
         public bool Select(TargetSelectMode mode)
         {
@@ -70,6 +70,17 @@ namespace Chess
         }
 
         /// <summary>
+        /// 判断敌人是否可以被索敌选中；死亡、数据缺失的敌人会被跳过。
+        /// </summary>
+        private static bool CanSelectEnemy(ChessController enemy)
+        {
+            return enemy != null
+                   && enemy.IsAlive
+                   && enemy.RuntimeData != null
+                   && enemy.BaseData != null;
+        }
+
+        /// <summary>
         /// 获取所有敌方棋子；阵营数据缺失时返回空序列。
         /// </summary>
         private IEnumerable<ChessController> GetEnemyChesses()
@@ -83,7 +94,7 @@ namespace Chess
         }
 
         /// <summary>
-        /// 索敌：敌方当前生命最低的单位
+        /// 索敌：敌方当前生命最低的存活单位。
         /// </summary>
         public void FindLowestHpEnemy()
         {
@@ -93,16 +104,18 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                if (enemy.RuntimeData.Hp < lowestHp)
+                if (!CanSelectEnemy(enemy) || enemy.RuntimeData.Hp >= lowestHp)
                 {
-                    lowestHp = enemy.RuntimeData.Hp;
-                    SelectedChessController = enemy;
+                    continue;
                 }
+
+                lowestHp = enemy.RuntimeData.Hp;
+                SelectedChessController = enemy;
             }
         }
 
         /// <summary>
-        /// 索敌：最近的敌方单位
+        /// 索敌：最近的存活敌方单位。
         /// </summary>
         public void FindNearestEnemy()
         {
@@ -113,17 +126,24 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                float distance = Vector2.Distance(ownerPos, enemy.RuntimeData.CurrentPosition);
-                if (distance < minDistance)
+                if (!CanSelectEnemy(enemy))
                 {
-                    minDistance = distance;
-                    SelectedChessController = enemy;
+                    continue;
                 }
+
+                float distance = Vector2.Distance(ownerPos, enemy.RuntimeData.CurrentPosition);
+                if (distance >= minDistance)
+                {
+                    continue;
+                }
+
+                minDistance = distance;
+                SelectedChessController = enemy;
             }
         }
 
         /// <summary>
-        /// 索敌：最远的敌方单位
+        /// 索敌：最远的存活敌方单位。
         /// </summary>
         public void FindFarthestEnemy()
         {
@@ -134,17 +154,24 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                float distance = Vector2.Distance(ownerPos, enemy.RuntimeData.CurrentPosition);
-                if (distance > maxDistance)
+                if (!CanSelectEnemy(enemy))
                 {
-                    maxDistance = distance;
-                    SelectedChessController = enemy;
+                    continue;
                 }
+
+                float distance = Vector2.Distance(ownerPos, enemy.RuntimeData.CurrentPosition);
+                if (distance <= maxDistance)
+                {
+                    continue;
+                }
+
+                maxDistance = distance;
+                SelectedChessController = enemy;
             }
         }
 
         /// <summary>
-        /// 索敌：敌方当前生命最高的单位
+        /// 索敌：敌方当前生命最高的存活单位。
         /// </summary>
         public void FindHighestHpEnemy()
         {
@@ -154,16 +181,18 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                if (enemy.RuntimeData.Hp > highestHp)
+                if (!CanSelectEnemy(enemy) || enemy.RuntimeData.Hp <= highestHp)
                 {
-                    highestHp = enemy.RuntimeData.Hp;
-                    SelectedChessController = enemy;
+                    continue;
                 }
+
+                highestHp = enemy.RuntimeData.Hp;
+                SelectedChessController = enemy;
             }
         }
 
         /// <summary>
-        /// 索敌：Range最大的敌方单位
+        /// 索敌：运行时射程最大的存活敌方单位。
         /// </summary>
         public void FindLongestRangeEnemy()
         {
@@ -173,17 +202,24 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                float currentRange = enemy.RuntimeData.GetCurrentRange(enemy.BaseData.Range);
-                if (currentRange > maxRange)
+                if (!CanSelectEnemy(enemy))
                 {
-                    maxRange = currentRange;
-                    SelectedChessController = enemy;
+                    continue;
                 }
+
+                float currentRange = enemy.RuntimeData.GetCurrentRange(enemy.BaseData.Range);
+                if (currentRange <= maxRange)
+                {
+                    continue;
+                }
+
+                maxRange = currentRange;
+                SelectedChessController = enemy;
             }
         }
 
         /// <summary>
-        /// 索敌：当前Atk最高的敌方单位
+        /// 索敌：当前攻击力最高的存活敌方单位。
         /// </summary>
         public void FindHighestAtkEnemy()
         {
@@ -193,12 +229,19 @@ namespace Chess
 
             foreach (var enemy in enemies)
             {
-                int currentAtk = enemy.RuntimeData.GetCurrentAtk(enemy.BaseData.Atk);
-                if (currentAtk > highestAtk)
+                if (!CanSelectEnemy(enemy))
                 {
-                    highestAtk = currentAtk;
-                    SelectedChessController = enemy;
+                    continue;
                 }
+
+                int currentAtk = enemy.RuntimeData.GetCurrentAtk(enemy.BaseData.Atk);
+                if (currentAtk <= highestAtk)
+                {
+                    continue;
+                }
+
+                highestAtk = currentAtk;
+                SelectedChessController = enemy;
             }
         }
     }

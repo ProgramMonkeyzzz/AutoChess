@@ -9,7 +9,7 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖棋子目标 Conditional 的索敌、射程、死亡判定和 LogicId 注册。
+/// 覆盖棋子目标 Conditional 的索敌、射程、死亡判定、攻击冷却和 LogicId 注册。
 /// </summary>
 public class ChessBehaviorConditionalTests
 {
@@ -40,6 +40,7 @@ public class ChessBehaviorConditionalTests
     [TestCase(ChessBehaviorTreeLogic.IsTargetInRange)]
     [TestCase(ChessBehaviorTreeLogic.IsSelfInTargetRange)]
     [TestCase(ChessBehaviorTreeLogic.IsTargetDead)]
+    [TestCase(ChessBehaviorTreeLogic.IsAttackCDReady)]
     public void MissingOwnerFailsAllConditionals(string logicId)
     {
         Assert.That(TickConditional(logicId, null), Is.EqualTo(NodeStatus.Failure));
@@ -91,6 +92,66 @@ public class ChessBehaviorConditionalTests
         Assert.That(_target.RuntimeData.Hp, Is.GreaterThan(0));
         Assert.That(_target.Fsm.CurrentState, Is.Not.TypeOf<DeadState>());
         Assert.That(TickConditional(ChessBehaviorTreeLogic.IsTargetDead, _owner), Is.EqualTo(NodeStatus.Failure));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsAttackCDReady, _owner),
+            Is.EqualTo(NodeStatus.Success));
+    }
+
+    /// <summary>
+    /// 验证攻击冷却 Conditional 不要求存在索敌目标。
+    /// </summary>
+    [Test]
+    public void IsAttackCDReadySucceedsWithoutTargetWhenCooldownReady()
+    {
+        SelectTarget(_owner, null);
+
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsAttackCDReady, _owner),
+            Is.EqualTo(NodeStatus.Success));
+    }
+
+    /// <summary>
+    /// 验证缺少攻击控制器时攻击冷却 Conditional 失败。
+    /// </summary>
+    [Test]
+    public void IsAttackCDReadyFailsWhenAttackControllerMissing()
+    {
+        typeof(ChessController)
+            .GetField("_attackController", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(_owner, null);
+
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsAttackCDReady, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+    }
+
+    /// <summary>
+    /// 验证冷却中攻击冷却 Conditional 失败，前摇期间冷却为 0 时成功。
+    /// </summary>
+    [Test]
+    public void IsAttackCDReadyMatchesCooldownAndWindUp()
+    {
+        ChessBaseData windUpConfig = CreateConfig(100, 5f);
+        windUpConfig.WindUpTime = 0.5f;
+        _owner = new ChessController(windUpConfig);
+        _owner.RuntimeData.CurrentPosition = Vector2.zero;
+        SelectTarget(_owner, _target);
+        _owner.AttackController.AttackTarget();
+        Assert.That(_owner.AttackController.IsWindingUp, Is.True);
+        Assert.That(_owner.AttackController.CooldownRemaining, Is.EqualTo(0f));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsAttackCDReady, _owner),
+            Is.EqualTo(NodeStatus.Success));
+
+        _owner = new ChessController(CreateConfig(100, 5f));
+        _owner.RuntimeData.CurrentPosition = Vector2.zero;
+        SelectTarget(_owner, _target);
+        _owner.AttackController.AttackTarget();
+        Assert.That(_owner.AttackController.IsWindingUp, Is.False);
+        Assert.That(_owner.AttackController.CooldownRemaining, Is.GreaterThan(0f));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsAttackCDReady, _owner),
+            Is.EqualTo(NodeStatus.Failure));
     }
 
     /// <summary>
@@ -238,7 +299,7 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证逻辑目录包含四个棋子 Conditional，且重复 Ensure 不会抛异常。
+    /// 验证逻辑目录包含棋子 Conditional，且重复 Ensure 不会抛异常。
     /// </summary>
     [Test]
     public void CatalogContainsChessConditionalsAndEnsureIsIdempotent()
@@ -249,6 +310,7 @@ public class ChessBehaviorConditionalTests
         AssertCatalogEntry(ChessBehaviorTreeLogic.IsTargetInRange, "目标在自己射程内");
         AssertCatalogEntry(ChessBehaviorTreeLogic.IsSelfInTargetRange, "自己在目标射程内");
         AssertCatalogEntry(ChessBehaviorTreeLogic.IsTargetDead, "当前目标已死亡");
+        AssertCatalogEntry(ChessBehaviorTreeLogic.IsAttackCDReady, "攻击冷却已就绪");
     }
 
     /// <summary>

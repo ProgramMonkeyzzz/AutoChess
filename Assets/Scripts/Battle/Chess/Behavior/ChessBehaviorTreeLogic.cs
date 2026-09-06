@@ -23,6 +23,9 @@ namespace Chess.Behavior
         /// <summary>当前索敌目标是否已经死亡。</summary>
         public const string IsTargetDead = "IsTargetDead";
 
+        /// <summary>当前攻击冷却是否已经结束。</summary>
+        public const string IsAttackCDReady = "IsAttackCDReady";
+
         /// <summary>对当前索敌目标发起一次攻击命令。</summary>
         public const string AttackTarget = "AttackTarget";
 
@@ -31,6 +34,9 @@ namespace Chess.Behavior
 
         /// <summary>向当前索敌目标反方向下达一次持续远离命令。</summary>
         public const string MoveAwayFromTarget = "MoveAwayFromTarget";
+
+        /// <summary>停止并清除当前移动命令。</summary>
+        public const string StopMovement = "StopMovement";
 
         /// <summary>按指定方式从敌方中选择当前索敌目标。</summary>
         public const string SelectTarget = "SelectTarget";
@@ -70,9 +76,11 @@ namespace Chess.Behavior
             RegisterCatalogConditional(IsTargetInRange, "目标在自己射程内");
             RegisterCatalogConditional(IsSelfInTargetRange, "自己在目标射程内");
             RegisterCatalogConditional(IsTargetDead, "当前目标已死亡");
+            RegisterCatalogConditional(IsAttackCDReady, "攻击冷却已就绪");
             RegisterCatalogAction(AttackTarget, "攻击目标");
             RegisterCatalogAction(MoveToTarget, "向目标移动");
             RegisterCatalogAction(MoveAwayFromTarget, "向目标反方向移动");
+            RegisterCatalogAction(StopMovement, "停止移动");
             RegisterCatalogAction(
                 SelectTarget,
                 "选择目标",
@@ -103,9 +111,11 @@ namespace Chess.Behavior
             registry.RegisterConditional(IsTargetInRange, data => new IsTargetInRangeConditional());
             registry.RegisterConditional(IsSelfInTargetRange, data => new IsSelfInTargetRangeConditional());
             registry.RegisterConditional(IsTargetDead, data => new IsTargetDeadConditional());
+            registry.RegisterConditional(IsAttackCDReady, data => new IsAttackCDReadyConditional());
             registry.RegisterAction(AttackTarget, data => new AttackTargetAction());
             registry.RegisterAction(MoveToTarget, data => new MoveToTargetAction());
             registry.RegisterAction(MoveAwayFromTarget, data => new MoveAwayFromTargetAction());
+            registry.RegisterAction(StopMovement, data => new StopMovementAction());
             registry.RegisterAction(SelectTarget, data => new SelectTargetAction(ReadSelectTargetMode(data)));
         }
 

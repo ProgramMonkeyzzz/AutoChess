@@ -13,7 +13,7 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖棋子行为树 Action 的发令结果、移动/攻击副作用、SelectTarget 索敌和 LogicId 注册。
+/// 覆盖棋子行为树 Action 的发令结果、移动/攻击/停止副作用、SelectTarget 索敌和 LogicId 注册。
 /// </summary>
 public class ChessBehaviorActionTests
 {
@@ -62,6 +62,7 @@ public class ChessBehaviorActionTests
     [TestCase(ChessBehaviorTreeLogic.AttackTarget)]
     [TestCase(ChessBehaviorTreeLogic.MoveToTarget)]
     [TestCase(ChessBehaviorTreeLogic.MoveAwayFromTarget)]
+    [TestCase(ChessBehaviorTreeLogic.StopMovement)]
     [TestCase(ChessBehaviorTreeLogic.SelectTarget)]
     public void MissingOwnerFailsAllActions(string logicId)
     {
@@ -93,6 +94,9 @@ public class ChessBehaviorActionTests
             Is.EqualTo(NodeStatus.Failure));
         Assert.That(
             TickAction(ChessBehaviorTreeLogic.MoveAwayFromTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.StopMovement, _owner),
             Is.EqualTo(NodeStatus.Failure));
         Assert.That(
             TickAction(ChessBehaviorTreeLogic.AttackTarget, _owner),
@@ -327,6 +331,7 @@ public class ChessBehaviorActionTests
         AssertCatalogEntry(ChessBehaviorTreeLogic.AttackTarget, "攻击目标");
         AssertCatalogEntry(ChessBehaviorTreeLogic.MoveToTarget, "向目标移动");
         AssertCatalogEntry(ChessBehaviorTreeLogic.MoveAwayFromTarget, "向目标反方向移动");
+        AssertCatalogEntry(ChessBehaviorTreeLogic.StopMovement, "停止移动");
         AssertSelectTargetCatalogEntry();
     }
 
@@ -345,7 +350,39 @@ public class ChessBehaviorActionTests
             TickAction(ChessBehaviorTreeLogic.MoveAwayFromTarget, _owner),
             Is.EqualTo(NodeStatus.Success));
         Assert.That(
+            TickAction(ChessBehaviorTreeLogic.StopMovement, _owner),
+            Is.EqualTo(NodeStatus.Success));
+        Assert.That(_owner.MovementController.HasDestination, Is.False);
+        Assert.That(
             TickAction(ChessBehaviorTreeLogic.AttackTarget, _owner),
+            Is.EqualTo(NodeStatus.Success));
+    }
+
+    /// <summary>
+    /// 验证停止移动不要求索敌目标，且重复停止仍然成功。
+    /// </summary>
+    [Test]
+    public void StopMovementSucceedsWithoutTargetAndWhenAlreadyStopped()
+    {
+        BindOwnerMovement();
+        SelectTarget(_owner, null);
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.MoveToTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+
+        SelectTarget(_owner, _target);
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.MoveToTarget, _owner),
+            Is.EqualTo(NodeStatus.Success));
+        Assert.That(_owner.MovementController.HasDestination, Is.True);
+
+        SelectTarget(_owner, null);
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.StopMovement, _owner),
+            Is.EqualTo(NodeStatus.Success));
+        Assert.That(_owner.MovementController.HasDestination, Is.False);
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.StopMovement, _owner),
             Is.EqualTo(NodeStatus.Success));
     }
 

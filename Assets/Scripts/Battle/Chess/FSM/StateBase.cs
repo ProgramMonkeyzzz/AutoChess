@@ -39,7 +39,7 @@ namespace Chess.FSM
         /// </summary>
         /// <param name="fsm">该状态所属的状态机。</param>
         /// <param name="enterBehaviorTree">进入状态时执行一次的行为树运行器。</param>
-        /// <param name="stayBehaviorTree">停留在状态期间逐帧推进的行为树运行器。</param>
+        /// <param name="stayBehaviorTree">停留在状态期间逐帧推进的行为树运行器；到达终态后每帧重新执行。</param>
         /// <param name="exitBehaviorTree">退出状态时执行一次的行为树运行器。</param>
         protected StateBase(
             FSM fsm,
@@ -100,7 +100,7 @@ namespace Chess.FSM
         public void OnStateStay(float deltaTime)
         {
             OnStateStayCore(deltaTime);
-            TickBehaviorTree(_stayBehaviorTree, deltaTime);
+            TickStayBehaviorTree(_stayBehaviorTree, deltaTime);
         }
 
         /// <summary>
@@ -141,6 +141,25 @@ namespace Chess.FSM
             }
 
             behaviorTree.Tick(deltaTime);
+        }
+
+        /// <summary>
+        /// 推进 Stay 行为树；已到达 Success/Failure 时先重置再重新执行，Running 则继续。
+        /// </summary>
+        private static void TickStayBehaviorTree(BehaviorTreeRunner behaviorTree, float deltaTime)
+        {
+            if (behaviorTree == null)
+            {
+                return;
+            }
+
+            if (behaviorTree.Status == NodeStatus.Success
+                || behaviorTree.Status == NodeStatus.Failure)
+            {
+                behaviorTree.Reset();
+            }
+
+            TickBehaviorTree(behaviorTree, deltaTime);
         }
 
         /// <summary>

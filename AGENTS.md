@@ -27,7 +27,7 @@
 
 - **ChessController**: 棋子控制器，持有棋子的完整状态
   - 包含 `ChessBaseData`（静态配置）和 `ChessRuntimeData`（运行时数据）
-  - 持有 `ChessTargetSelector` 用于目标选择；`TargetSelectMode` 覆盖最近/最远/最低血/最高血/最长射程/最高攻击，`Select(mode)` 分发到对应 `Find*`，非法枚举保持原目标
+  - 持有 `ChessTargetSelector` 用于目标选择；`TargetSelectMode` 覆盖最近/最远/最低血/最高血/最长射程/最高攻击，`Select(mode)` 分发到对应 `Find*`，非法枚举保持原目标。所有 `Find*` 跳过 `!IsAlive` 敌人；只剩尸体时 `SelectedChessController = null`
   - 持有 `ChessDamageReceiver`，通过 `DamageReceiver` 接收伤害并触发死亡状态检查
   - 持有 `AttackController`，通过 `AttackController.Tick()` 统一驱动攻击冷却、前摇和命中
   - 公开 `UniqueId`（运行时实例身份）和 `ConfigId`（静态配置身份）
@@ -83,7 +83,7 @@
 - **FSM**: 绑定到一个 `ChessController`，按状态类型注册状态，按源状态类型注册转换
 - **StateBase**: 状态基类，保存可选的 Enter、Stay、Exit 三个 `BehaviorTreeRunner`
   - `OnStateEnter` / `OnStateStay` / `OnStateExit` 是不可重写的模板方法，派生状态通过对应的 `Core` 方法实现自身逻辑
-  - Enter 树在状态自身进入逻辑后执行一次，Stay 树在状态自身停留逻辑后使用当前 `deltaTime` 持续推进，Exit 树在状态自身退出清理前执行一次
+  - Enter 树在状态自身进入逻辑后执行一次，Stay 树在状态自身停留逻辑后使用当前 `deltaTime` 持续推进；Stay 到达 `Success`/`Failure` 后下一 Tick 先 `Reset + Start` 再执行，`Running` 则继续。Exit 树在状态自身退出清理前执行一次。`BehaviorTreeRunner` 自身终态语义不变
   - 状态退出时停止全部行为树并取消异步节点，重新进入时重置三棵树
 - **StateTransition** / **StateTransition<State1, State2>**: 从 `State1` 转到 `State2`，由 `CanTransition()` 决定是否触发
 - **MovementState**: 所有棋子的默认 FSM 初始状态，退出时停止并清理移动控制器
@@ -113,7 +113,7 @@
 - `ActionNode` 返回 `Running`、`Success` 或 `Failure`；异步 Action 继承 `AsyncActionNode` 并使用 `UniTask<ActionResult>`，不得使用 `Task`
 - `Blackboard` 使用固定 key 和首次写入的泛型类型传递运行时数据；普通非可空值类型使用池化 `ValueTypeWrap<T>` 保存并在 `Remove`/`Clear` 时回收，`Nullable<T>` 保持原有语义；黑板、注册表和节点状态不参与行为树定义序列化
 - `BehaviorTreeBinarySerializer` 仅用于可信本地数据，使用 `BinaryFormatter` 序列化带版本号的行为树定义
-- 棋子行为树节点位于 `Assets/Scripts/Battle/Chess/Behavior/`，命名空间 `Chess.Behavior`。Conditional LogicId：`HasTarget`、`IsTargetInRange`、`IsSelfInTargetRange`、`IsTargetDead`。Action LogicId：`AttackTarget`、`MoveToTarget`、`MoveAwayFromTarget`、`SelectTarget`。从 `BehaviorTreeContext.Owner` 读取 `ChessController`；无索敌目标时目标判定/攻击/移动全部失败。`SelectTarget` 的 Int 参数 `Mode` 为 `TargetSelectMode`（0=最近，1=最远，2=最低血，3=最高血，4=最长射程，5=最高攻击），缺参视为最近；选中敌人才 Success，无敌人或非法枚举为 Failure。射程 Conditional 使用 `GetCurrentRange`；死亡目标仍算存在目标并按距离判定。Action 只发一次命令，成功后立即 Success，不 Running 等待到达或命中。构建时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 runner 的 owner 传该棋子
+- 棋子行为树节点位于 `Assets/Scripts/Battle/Chess/Behavior/`，命名空间 `Chess.Behavior`。Conditional LogicId：`HasTarget`、`IsTargetInRange`、`IsSelfInTargetRange`、`IsTargetDead`、`IsAttackCDReady`。Action LogicId：`AttackTarget`、`MoveToTarget`、`MoveAwayFromTarget`、`StopMovement`、`SelectTarget`。从 `BehaviorTreeContext.Owner` 读取 `ChessController`；无索敌目标时目标判定/攻击/移动全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 的 Int 参数 `Mode` 为 `TargetSelectMode`（0=最近，1=最远，2=最低血，3=最高血，4=最长射程，5=最高攻击），缺参视为最近；选中存活敌人才 Success，无存活敌人或非法枚举为 Failure。`IsAttackCDReady` 在 `CooldownRemaining <= 0`（含前摇中）时成立。射程 Conditional 使用 `GetCurrentRange`；死亡目标仍算存在目标并按距离判定。Action 只发一次命令，成功后立即 Success，不 Running 等待到达或命中。构建时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 runner 的 owner 传该棋子
 
 ### Behavior Tree Unity Editor
 
@@ -123,6 +123,7 @@
 - Action/Conditional 的 LogicId 和参数元数据通过 `BehaviorTreeLogicCatalog` 注册；编辑器参数当前支持 `string`、`int`、`float` 和 `bool`
 - 叶节点 Inspector 用参数列表宿主创建 Odin `PropertyTree` 并跨 GraphEditor 的 Layout/Repaint 缓存；禁止把空 `List` 当作多目标传入 `PropertyTree.Create(IList)`
 - `ChessBehaviorTreeLogic` 在编辑器/运行时域加载时幂等注册棋子 Action/Conditional，分类为 `Chess`
+- 棋子风筝图源资产为 `Assets/Configs/BehaviorTrees/ChessCombat.asset`；菜单 `Tools > AutoChess > Behavior Tree > Rebuild Chess Combat Asset` 只重建该图且不导出 bytes。现有 `BehaviorTree.asset` 示例图保留，该树当前不自动挂到 `MovementState`
 
 ### Config Pipeline
 
@@ -166,16 +167,17 @@
   - `ConfigBinaryExporterTests` 覆盖配置的递归导出、字段序列化和重复导出覆盖行为
   - `ChessConfigRepositoryTests` 覆盖内存注册、重复 `ConfigId` 失败、`TryGet`、`ConfigId = 0`，以及临时 Resources 目录下的 `LoadFromResources`
   - `CampManagerTests` 覆盖工厂注册、出生点写入、按 `ConfigId` 分组、按 `UniqueId` 索引，以及 `AgentId` 相同后再按 `UniqueId` 的稳定排序
-  - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先、重复/跨实例注册校验，以及状态行为树的阶段顺序、时间步、重入和取消
+  - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先、重复/跨实例注册校验，以及状态行为树的阶段顺序、时间步、Stay 终态每帧重跑、重入和取消
   - `ChessMovementControllerTests` 覆盖移动命令、远离目标刷新/贴边、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
   - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建和 BattleManager 帧发布
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
   - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog、bytes 导出往返，以及叶节点空参数列表的 Odin PropertyTree 宿主绘制
-  - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、运行时射程和 LogicId 注册
-  - `ChessBehaviorActionTests` 覆盖棋子 Action 的发令即 Success/Failure、攻击/移动副作用、`SelectTarget` 索敌和 LogicId 注册
-  - `ChessTargetSelectorTests` 覆盖索敌枚举分发、运行时射程/攻击力、死亡敌人可选中和非法枚举保持原目标
+  - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、攻击冷却、运行时射程和 LogicId 注册
+  - `ChessBehaviorActionTests` 覆盖棋子 Action 的发令即 Success/Failure、攻击/移动/`StopMovement` 副作用、`SelectTarget` 索敌和 LogicId 注册
+  - `ChessTargetSelectorTests` 覆盖索敌枚举分发、运行时射程/攻击力、跳过死亡敌人、只剩尸体清空目标和非法枚举保持原目标
+  - `ChessCombatBehaviorTreeGraphTests` 覆盖风筝图节点顺序/LogicId/`Mode=0`、提交资产编译，以及无目标索敌、尸体换人、CD 攻击、贴身逃离、射程内停止、超距追击和攻击失败走位
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -236,7 +238,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - FSM 的状态和转换必须绑定到同一个 FSM 实例，跨实例注册或重复注册会抛异常
 - `Tick()` 在 Stay 之前先处理转换，因此转换成功后 `OnStateStay` 会落在新状态上
 - 状态子类不得绕过 `StateBase` 的生命周期模板，应重写 `OnStateEnterCore`、`OnStateStayCore` 或 `OnStateExitCore`
-- Enter/Exit 行为树各只 Tick 一次；若返回 Running，Enter 树在离开状态时取消，Exit 树在退出回调结束时立即取消
+- Enter/Exit 行为树各只 Tick 一次；Stay 树到达 `Success`/`Failure` 后下一 Tick `Reset + Start` 再跑，`Running` 继续。若返回 Running，Enter 树在离开状态时取消，Exit 树在退出回调结束时立即取消
 - `ChessController` 创建后 FSM 已处于 `MovementState`；战斗循环应调用 `ChessController.Tick()`，不要再单独驱动 `ChessMovementController.Tick()`
 - `BattleManager` 的棋子、FSM、攻击、伤害和子弹逻辑只在其专属工作线程执行；`GameManager` 只在 Unity 主线程调用 `SimulatorBurst`
 - `NavigationManager` 的代理注册、`Tick`、Job `Complete` 和 `Dispose` 必须在创建它的 Unity 主线程调用
@@ -257,7 +259,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - NodeCanvas 原生 `BehaviourTree` 资产与本项目 `BehaviorTreeGraphAsset` 不兼容，不要混用两套运行时
 - 叶节点 Inspector 不能把参数 `List` 直接传给 `PropertyTree.Create(IList)`；空列表会抛出 `There must be at least one target` 并打乱 GraphEditor 的 GUILayout
 - 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
-- 构建棋子行为树时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 `BehaviorTreeRunner` 的 owner 传该 `ChessController`；目标 Conditional/攻击/移动 Action 无索敌目标时全部失败。`SelectTarget` 按 Int `Mode` 索敌，选中敌人才 Success。射程 Conditional 走 `GetCurrentRange`；Action 发令成功后立即 Success，持续追踪/远离由移动控制器负责
+- 构建棋子行为树时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 `BehaviorTreeRunner` 的 owner 传该 `ChessController`；目标 Conditional/攻击/移动 Action 无索敌目标时全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 按 Int `Mode` 索敌并跳过死亡敌人，选中存活敌人才 Success。射程 Conditional 走 `GetCurrentRange`；Action 发令成功后立即 Success，持续追踪/远离由移动控制器负责。风筝图只提交 `Assets/Configs/BehaviorTrees/ChessCombat.asset`，重建菜单不导出 `.bytes`
 - 战斗线程不得直接读写 `ChessView`/`BulletView`；表现同步只走 `BattleRenderFrame`，死亡棋子和命中子弹从快照消失后由 `RenderManager` 销毁视图
 - 棋子出生点由 `RegisterChess(campId, configId, position)` 写入，调用方不必先 `new ChessController`；查不到 `ConfigId` 时主线程返回 `0`，战斗线程只记录错误并跳过
 - 创建棋子时必须 `Clone` 一份 `ChessBaseData`，避免多个实例共享可变配置

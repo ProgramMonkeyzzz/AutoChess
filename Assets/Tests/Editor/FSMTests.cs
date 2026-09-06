@@ -231,10 +231,10 @@ public class FSMTests
     }
 
     /// <summary>
-    /// 验证停留行为树到达终态后保持结果，并在状态重入时重置后重新执行。
+    /// 验证 Stay 树到达终态后下一 Tick 重新执行，状态重入时也会重置。
     /// </summary>
     [Test]
-    public void StayBehaviorTreeHoldsTerminalStatusAndRerunsAfterStateReentry()
+    public void StayBehaviorTreeRerunsAfterTerminalStatusEachTick()
     {
         var fsm = new FSM(new ChessController());
         var events = new List<string>();
@@ -253,8 +253,9 @@ public class FSMTests
         fsm.Tick(0.1f);
         fsm.Tick(0.2f);
 
-        Assert.That(stayAction.UpdateCount, Is.EqualTo(1));
+        Assert.That(stayAction.UpdateCount, Is.EqualTo(2));
         Assert.That(stayTree.Status, Is.EqualTo(NodeStatus.Success));
+        Assert.That(stayAction.DeltaTimes, Is.EqualTo(new[] { 0.1f, 0.2f }));
 
         toAttack = true;
         fsm.CheckCurrentStateTransition();
@@ -263,8 +264,8 @@ public class FSMTests
         fsm.CheckCurrentStateTransition();
         fsm.Tick(0.3f);
 
-        Assert.That(stayAction.UpdateCount, Is.EqualTo(2));
-        Assert.That(stayAction.DeltaTimes, Is.EqualTo(new[] { 0.1f, 0.3f }));
+        Assert.That(stayAction.UpdateCount, Is.EqualTo(3));
+        Assert.That(stayAction.DeltaTimes, Is.EqualTo(new[] { 0.1f, 0.2f, 0.3f }));
     }
 
     /// <summary>

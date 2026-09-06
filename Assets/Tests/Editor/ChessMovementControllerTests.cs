@@ -147,6 +147,8 @@ public class ChessMovementControllerTests
         ChessController target = new ChessController(CreateConfig(100, 1f));
         target.RuntimeData.CurrentPosition = new Vector2(3f, 4f);
         SelectTarget(_owner, target);
+        // 零前摇会在同一调用内完成命中，无法停留在 AttackState。
+        _owner.BaseData.WindUpTime = 0.5f;
         _owner.AttackController.AttackTarget();
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
         Assert.That(_movement.HasDestination, Is.False);
