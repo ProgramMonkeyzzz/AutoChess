@@ -218,6 +218,78 @@ public class BehaviorTreeGraphTests
     }
 
     /// <summary>
+    /// 验证目录注册 Conditional 时自动追加 Invert 参数，已有同名参数则不重复。
+    /// </summary>
+    [Test]
+    public void LogicCatalogAppendsInvertParameterToConditionals()
+    {
+        BehaviorTreeLogicCatalog.RegisterConditional(
+            "CatalogInvertTest",
+            "Invert Test",
+            "Combat");
+
+        Assert.That(
+            BehaviorTreeLogicCatalog.TryGet(
+                BehaviorTreeLogicKind.Conditional,
+                "CatalogInvertTest",
+                out BehaviorTreeLogicDefinition definition),
+            Is.True);
+        Assert.That(definition.Parameters.Count, Is.EqualTo(1));
+        Assert.That(definition.Parameters[0].Key, Is.EqualTo(ConditionalNode.InvertParameterKey));
+        Assert.That(definition.Parameters[0].Type, Is.EqualTo(BehaviorTreeParameterType.Bool));
+        Assert.That(definition.Parameters[0].DisplayName, Is.EqualTo("取反"));
+        Assert.That(definition.Parameters[0].DefaultBool, Is.False);
+
+        var existingFlag = new BehaviorTreeParameterDefinition(
+            "Ready",
+            BehaviorTreeParameterType.Bool,
+            "就绪");
+        var customInvert = new BehaviorTreeParameterDefinition(
+            ConditionalNode.InvertParameterKey,
+            BehaviorTreeParameterType.Bool,
+            "Custom");
+        customInvert.DefaultBool = true;
+        BehaviorTreeLogicCatalog.RegisterConditional(
+            "CatalogInvertCustom",
+            "Custom Invert",
+            "Combat",
+            new[] { existingFlag, customInvert });
+
+        Assert.That(
+            BehaviorTreeLogicCatalog.TryGet(
+                BehaviorTreeLogicKind.Conditional,
+                "CatalogInvertCustom",
+                out definition),
+            Is.True);
+        Assert.That(definition.Parameters.Count, Is.EqualTo(2));
+        Assert.That(definition.Parameters[0].Key, Is.EqualTo("Ready"));
+        Assert.That(definition.Parameters[1].Key, Is.EqualTo(ConditionalNode.InvertParameterKey));
+        Assert.That(definition.Parameters[1].DisplayName, Is.EqualTo("Custom"));
+        Assert.That(definition.Parameters[1].DefaultBool, Is.True);
+
+        var onlyReady = new BehaviorTreeParameterDefinition(
+            "Ready",
+            BehaviorTreeParameterType.Bool,
+            "就绪");
+        BehaviorTreeLogicCatalog.RegisterConditional(
+            "CatalogInvertAppended",
+            "Append Invert",
+            "Combat",
+            new[] { onlyReady });
+
+        Assert.That(
+            BehaviorTreeLogicCatalog.TryGet(
+                BehaviorTreeLogicKind.Conditional,
+                "CatalogInvertAppended",
+                out definition),
+            Is.True);
+        Assert.That(definition.Parameters.Count, Is.EqualTo(2));
+        Assert.That(definition.Parameters[0].Key, Is.EqualTo("Ready"));
+        Assert.That(definition.Parameters[1].Key, Is.EqualTo(ConditionalNode.InvertParameterKey));
+        Assert.That(definition.Parameters[1].DefaultBool, Is.False);
+    }
+
+    /// <summary>
     /// 验证导出的 bytes 可以被现有序列化器读取并保留定义内容。
     /// </summary>
     [Test]

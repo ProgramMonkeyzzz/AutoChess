@@ -9,7 +9,7 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖棋子目标 Conditional 的索敌、射程、死亡判定、攻击冷却和 LogicId 注册。
+/// 覆盖棋子目标 Conditional 的索敌、射程比较、死亡判定、攻击冷却、Invert 取反和 LogicId 注册。
 /// </summary>
 public class ChessBehaviorConditionalTests
 {
@@ -34,25 +34,27 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证无 Owner 时四个 Conditional 全部失败。
+    /// 验证无 Owner 时 Conditional 全部失败。
     /// </summary>
     [TestCase(ChessBehaviorTreeLogic.HasTarget)]
     [TestCase(ChessBehaviorTreeLogic.IsTargetInRange)]
     [TestCase(ChessBehaviorTreeLogic.IsSelfInTargetRange)]
     [TestCase(ChessBehaviorTreeLogic.IsTargetDead)]
     [TestCase(ChessBehaviorTreeLogic.IsAttackCDReady)]
+    [TestCase(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget)]
     public void MissingOwnerFailsAllConditionals(string logicId)
     {
         Assert.That(TickConditional(logicId, null), Is.EqualTo(NodeStatus.Failure));
     }
 
     /// <summary>
-    /// 验证无索敌目标时四个 Conditional 全部失败。
+    /// 验证无索敌目标时目标相关 Conditional 全部失败。
     /// </summary>
     [TestCase(ChessBehaviorTreeLogic.HasTarget)]
     [TestCase(ChessBehaviorTreeLogic.IsTargetInRange)]
     [TestCase(ChessBehaviorTreeLogic.IsSelfInTargetRange)]
     [TestCase(ChessBehaviorTreeLogic.IsTargetDead)]
+    [TestCase(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget)]
     public void MissingTargetFailsAllConditionals(string logicId)
     {
         SelectTarget(_owner, null);
@@ -279,6 +281,92 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
+    /// 验证自己当前射程大于目标时 IsRangeGreaterThanTarget 成功。
+    /// </summary>
+    [Test]
+    public void IsRangeGreaterThanTargetSucceedsWhenOwnerRangeIsLarger()
+    {
+        Assert.That(
+            _owner.RuntimeData.GetCurrentRange(_owner.BaseData.Range),
+            Is.GreaterThan(_target.RuntimeData.GetCurrentRange(_target.BaseData.Range)));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Success));
+    }
+
+    /// <summary>
+    /// 验证双方当前射程相等时 IsRangeGreaterThanTarget 失败。
+    /// </summary>
+    [Test]
+    public void IsRangeGreaterThanTargetFailsWhenRangesAreEqual()
+    {
+        _target.RuntimeData.CurrentRangeIncrement = 1f;
+
+        Assert.That(
+            _owner.RuntimeData.GetCurrentRange(_owner.BaseData.Range),
+            Is.EqualTo(_target.RuntimeData.GetCurrentRange(_target.BaseData.Range)));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+    }
+
+    /// <summary>
+    /// 验证自己当前射程小于目标时 IsRangeGreaterThanTarget 失败。
+    /// </summary>
+    [Test]
+    public void IsRangeGreaterThanTargetFailsWhenOwnerRangeIsSmaller()
+    {
+        _target.RuntimeData.CurrentRangeIncrement = 2f;
+
+        Assert.That(
+            _owner.RuntimeData.GetCurrentRange(_owner.BaseData.Range),
+            Is.LessThan(_target.RuntimeData.GetCurrentRange(_target.BaseData.Range)));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+    }
+
+    /// <summary>
+    /// 验证 IsRangeGreaterThanTarget 使用双方运行时射程乘区和增量。
+    /// </summary>
+    [Test]
+    public void IsRangeGreaterThanTargetUsesCurrentRangeModifiers()
+    {
+        _owner.RuntimeData.CurrentRangeMultipler = 0.5f;
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+
+        _owner.RuntimeData.CurrentRangeIncrement = 1.6f;
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Success));
+
+        _target.RuntimeData.CurrentRangeMultipler = 1.5f;
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+    }
+
+    /// <summary>
+    /// 验证死亡目标仍按当前射程比较，且不要求目标存活。
+    /// </summary>
+    [Test]
+    public void IsRangeGreaterThanTargetStillComparesDeadTargetRange()
+    {
+        _target.RuntimeData.Hp = 0;
+
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Success));
+
+        _target.RuntimeData.CurrentRangeIncrement = 2f;
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+    }
+
+    /// <summary>
     /// 验证死亡目标仍按距离判定射程，且 IsTargetDead 同时成功。
     /// </summary>
     [Test]
@@ -311,6 +399,7 @@ public class ChessBehaviorConditionalTests
         AssertCatalogEntry(ChessBehaviorTreeLogic.IsSelfInTargetRange, "自己在目标射程内");
         AssertCatalogEntry(ChessBehaviorTreeLogic.IsTargetDead, "当前目标已死亡");
         AssertCatalogEntry(ChessBehaviorTreeLogic.IsAttackCDReady, "攻击冷却已就绪");
+        AssertCatalogEntry(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, "自己射程大于目标射程");
     }
 
     /// <summary>
@@ -327,17 +416,42 @@ public class ChessBehaviorConditionalTests
             TickConditional(ChessBehaviorTreeLogic.IsSelfInTargetRange, _owner),
             Is.EqualTo(NodeStatus.Success));
         Assert.That(TickConditional(ChessBehaviorTreeLogic.IsTargetDead, _owner), Is.EqualTo(NodeStatus.Failure));
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.IsRangeGreaterThanTarget, _owner),
+            Is.EqualTo(NodeStatus.Success));
+    }
+
+    /// <summary>
+    /// 验证 Invert=true 时 HasTarget 对无目标和有目标结果取反。
+    /// </summary>
+    [Test]
+    public void InvertHasTargetFlipsMissingAndSelectedTarget()
+    {
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.HasTarget, _owner, true),
+            Is.EqualTo(NodeStatus.Failure));
+
+        SelectTarget(_owner, null);
+        Assert.That(
+            TickConditional(ChessBehaviorTreeLogic.HasTarget, _owner, true),
+            Is.EqualTo(NodeStatus.Success));
     }
 
     /// <summary>
     /// 使用指定 LogicId 构建单节点行为树并推进一次。
     /// </summary>
-    private static NodeStatus TickConditional(string logicId, ChessController owner)
+    private static NodeStatus TickConditional(string logicId, ChessController owner, bool invert = false)
     {
         var registry = new BehaviorTreeRegistry();
         ChessBehaviorTreeLogic.Register(registry);
         var root = new RootNodeData();
-        root.AddChild(new ConditionalNodeData(logicId));
+        var data = new ConditionalNodeData(logicId);
+        if (invert)
+        {
+            data.Parameters[ConditionalNode.InvertParameterKey] = true;
+        }
+
+        root.AddChild(data);
         var runner = new BehaviorTreeRunner(
             new BehaviorTreeDefinition(root),
             registry,
@@ -360,7 +474,11 @@ public class ChessBehaviorConditionalTests
             Is.True);
         Assert.That(definition.DisplayName, Is.EqualTo(displayName));
         Assert.That(definition.Category, Is.EqualTo(ChessBehaviorTreeLogic.CatalogCategory));
-        Assert.That(definition.Parameters, Is.Empty);
+        Assert.That(definition.Parameters.Count, Is.EqualTo(1));
+        Assert.That(definition.Parameters[0].Key, Is.EqualTo(ConditionalNode.InvertParameterKey));
+        Assert.That(definition.Parameters[0].Type, Is.EqualTo(BehaviorTreeParameterType.Bool));
+        Assert.That(definition.Parameters[0].DisplayName, Is.EqualTo("取反"));
+        Assert.That(definition.Parameters[0].DefaultBool, Is.False);
     }
 
     /// <summary>

@@ -291,7 +291,44 @@ namespace BehaviorTree
                 }
             }
 
+            if (expectedKind == BehaviorTreeLogicKind.Conditional)
+            {
+                EnsureInvertParameter(definition);
+            }
+
             definitions.Add(definition.LogicId, definition);
+        }
+
+        /// <summary>
+        /// 若 Conditional 尚未声明 Invert 参数，则追加默认 false 的取反参数。
+        /// </summary>
+        private static void EnsureInvertParameter(BehaviorTreeLogicDefinition definition)
+        {
+            if (definition.Parameters == null)
+            {
+                definition.Parameters = new List<BehaviorTreeParameterDefinition>();
+            }
+
+            for (int i = 0; i < definition.Parameters.Count; i++)
+            {
+                BehaviorTreeParameterDefinition parameter = definition.Parameters[i];
+                if (parameter != null
+                    && string.Equals(
+                        parameter.Key,
+                        ConditionalNode.InvertParameterKey,
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+
+            definition.Parameters.Add(new BehaviorTreeParameterDefinition(
+                ConditionalNode.InvertParameterKey,
+                BehaviorTreeParameterType.Bool,
+                "取反")
+            {
+                DefaultBool = false
+            });
         }
 
         /// <summary>

@@ -444,6 +444,22 @@ public class BehaviorTreeTests
     }
 
     /// <summary>
+    /// 验证注册表构建 Conditional 时按 Invert 参数取反，缺参或无法解析不取反。
+    /// </summary>
+    [Test]
+    public void RegistryAppliesConditionalInvertParameter()
+    {
+        Assert.That(TickRegisteredConditional(true, null), Is.EqualTo(NodeStatus.Success));
+        Assert.That(TickRegisteredConditional(false, null), Is.EqualTo(NodeStatus.Failure));
+        Assert.That(TickRegisteredConditional(true, false), Is.EqualTo(NodeStatus.Success));
+        Assert.That(TickRegisteredConditional(false, false), Is.EqualTo(NodeStatus.Failure));
+        Assert.That(TickRegisteredConditional(true, true), Is.EqualTo(NodeStatus.Failure));
+        Assert.That(TickRegisteredConditional(false, true), Is.EqualTo(NodeStatus.Success));
+        Assert.That(TickRegisteredConditional(true, "not-a-bool"), Is.EqualTo(NodeStatus.Success));
+        Assert.That(TickRegisteredConditional(false, "not-a-bool"), Is.EqualTo(NodeStatus.Failure));
+    }
+
+    /// <summary>
     /// 验证未注册 LogicId 会在构建行为树时给出明确错误。
     /// </summary>
     [Test]
@@ -756,6 +772,29 @@ public class BehaviorTreeTests
             ResetCount++;
             _resultIndex = 0;
         }
+    }
+
+    /// <summary>
+    /// 使用注册表构建固定结果 Conditional 并 Tick 一次；invert 为 null 表示不写入参数。
+    /// </summary>
+    private static NodeStatus TickRegisteredConditional(bool evaluateResult, object invert)
+    {
+        var root = new RootNodeData();
+        var data = new ConditionalNodeData("Fixed");
+        if (invert != null)
+        {
+            data.Parameters[ConditionalNode.InvertParameterKey] = invert;
+        }
+
+        root.AddChild(data);
+        var registry = new BehaviorTreeRegistry();
+        registry.RegisterConditional("Fixed", _ => new FixedConditional(evaluateResult));
+        var runner = new BehaviorTreeRunner(
+            new BehaviorTreeDefinition(root),
+            registry,
+            new Blackboard());
+        runner.Start();
+        return runner.Tick();
     }
 
     /// <summary>

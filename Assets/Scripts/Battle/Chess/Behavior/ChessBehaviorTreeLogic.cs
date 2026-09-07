@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using BehaviorTree;
 using Chess;
@@ -25,6 +25,9 @@ namespace Chess.Behavior
 
         /// <summary>当前攻击冷却是否已经结束。</summary>
         public const string IsAttackCDReady = "IsAttackCDReady";
+
+        /// <summary>自己的当前射程是否严格大于索敌目标的当前射程。</summary>
+        public const string IsRangeGreaterThanTarget = "IsRangeGreaterThanTarget";
 
         /// <summary>对当前索敌目标发起一次攻击命令。</summary>
         public const string AttackTarget = "AttackTarget";
@@ -77,6 +80,7 @@ namespace Chess.Behavior
             RegisterCatalogConditional(IsSelfInTargetRange, "自己在目标射程内");
             RegisterCatalogConditional(IsTargetDead, "当前目标已死亡");
             RegisterCatalogConditional(IsAttackCDReady, "攻击冷却已就绪");
+            RegisterCatalogConditional(IsRangeGreaterThanTarget, "自己射程大于目标射程");
             RegisterCatalogAction(AttackTarget, "攻击目标");
             RegisterCatalogAction(MoveToTarget, "向目标移动");
             RegisterCatalogAction(MoveAwayFromTarget, "向目标反方向移动");
@@ -112,6 +116,7 @@ namespace Chess.Behavior
             registry.RegisterConditional(IsSelfInTargetRange, data => new IsSelfInTargetRangeConditional());
             registry.RegisterConditional(IsTargetDead, data => new IsTargetDeadConditional());
             registry.RegisterConditional(IsAttackCDReady, data => new IsAttackCDReadyConditional());
+            registry.RegisterConditional(IsRangeGreaterThanTarget, data => new IsRangeGreaterThanTargetConditional());
             registry.RegisterAction(AttackTarget, data => new AttackTargetAction());
             registry.RegisterAction(MoveToTarget, data => new MoveToTargetAction());
             registry.RegisterAction(MoveAwayFromTarget, data => new MoveAwayFromTargetAction());
@@ -203,7 +208,7 @@ namespace Chess.Behavior
         }
 
         /// <summary>
-        /// 若目录中尚不存在指定 LogicId，则注册无参 Conditional 描述。
+        /// 若目录中尚不存在指定 LogicId，则注册 Conditional 描述；Invert 由目录自动追加。
         /// </summary>
         private static void RegisterCatalogConditional(string logicId, string displayName)
         {

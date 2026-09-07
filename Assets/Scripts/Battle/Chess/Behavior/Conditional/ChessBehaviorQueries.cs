@@ -60,6 +60,20 @@ namespace Chess.Behavior
         }
 
         /// <summary>
+        /// 判断 left 的当前运行时射程是否严格大于 right。
+        /// </summary>
+        public static bool IsCurrentRangeGreaterThan(ChessController left, ChessController right)
+        {
+            if (!TryGetCurrentRange(left, out float leftRange)
+                || !TryGetCurrentRange(right, out float rightRange))
+            {
+                return false;
+            }
+
+            return leftRange > rightRange;
+        }
+
+        /// <summary>
         /// 判断 from 到 to 的棋盘距离是否不超过 rangeOwner 的当前射程。
         /// </summary>
         public static bool IsWithinCurrentRange(

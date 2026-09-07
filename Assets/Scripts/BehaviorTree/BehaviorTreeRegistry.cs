@@ -95,7 +95,36 @@ namespace BehaviorTree
                 throw new InvalidOperationException($"Conditional LogicId '{data.LogicId}' 的工厂返回了 null。 ");
             }
 
+            node.Invert = ReadInvert(data);
             return node;
+        }
+
+        /// <summary>
+        /// 从 Conditional 参数读取 Invert；缺省或无法解析时不取反。
+        /// </summary>
+        private static bool ReadInvert(ConditionalNodeData data)
+        {
+            if (data == null
+                || data.Parameters == null
+                || !data.Parameters.TryGetValue(ConditionalNode.InvertParameterKey, out object raw)
+                || raw == null)
+            {
+                return false;
+            }
+
+            if (raw is bool invert)
+            {
+                return invert;
+            }
+
+            try
+            {
+                return Convert.ToBoolean(raw);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         /// <summary>

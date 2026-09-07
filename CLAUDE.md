@@ -116,16 +116,17 @@
 - `BehaviorTreeRunner` 管理 `Start`、`Tick`、`Stop` 和 `Reset`；树到达 `Success` 或 `Failure` 后保持终态，重新执行前必须 `Reset` 并再次 `Start`
 - `SequenceNode`、`SelectorNode` 按顺序驱动子节点，`ParallelNode` 可分别配置 All/Any 成功和失败策略，失败判定优先
 - `ActionNode` 返回 `Running`、`Success` 或 `Failure`；异步 Action 继承 `AsyncActionNode` 并使用 `UniTask<ActionResult>`，不得使用 `Task`
+- 所有 Conditional 支持 bool 参数 `Invert`（显示名「取反」，默认 false）；为 true 时对 `Evaluate` 的完整结果取反，缺参或无法解析不取反
 - `Blackboard` 使用固定 key 和首次写入的泛型类型传递运行时数据；普通非可空值类型使用池化 `ValueTypeWrap<T>` 保存并在 `Remove`/`Clear` 时回收，`Nullable<T>` 保持原有语义；黑板、注册表和节点状态不参与行为树定义序列化
 - `BehaviorTreeBinarySerializer` 仅用于可信本地数据，使用 `BinaryFormatter` 序列化带版本号的行为树定义
-- 棋子行为树节点位于 `Assets/Scripts/Battle/Chess/Behavior/`，命名空间 `Chess.Behavior`。Conditional LogicId：`HasTarget`、`IsTargetInRange`、`IsSelfInTargetRange`、`IsTargetDead`、`IsAttackCDReady`。Action LogicId：`AttackTarget`、`MoveToTarget`、`MoveAwayFromTarget`、`StopMovement`、`SelectTarget`。从 `BehaviorTreeContext.Owner` 读取 `ChessController`；无索敌目标时目标判定/攻击/移动全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 的 Int 参数 `Mode` 为 `TargetSelectMode`（0=最近，1=最远，2=最低血，3=最高血，4=最长射程，5=最高攻击），缺参视为最近；选中存活敌人才 Success，无存活敌人或非法枚举为 Failure。`IsAttackCDReady` 在 `CooldownRemaining <= 0`（含前摇中）时成立。射程 Conditional 使用 `GetCurrentRange`；死亡目标仍算存在目标并按距离判定。Action 只发一次命令，成功后立即 Success，不 Running 等待到达或命中。构建时必须 `ChessBehaviorTreeLogic.Register(registry)` 或 `CreateRunner(definition, owner)`，且 runner 的 owner 传该棋子
+- 棋子行为树节点位于 `Assets/Scripts/Battle/Chess/Behavior/`，命名空间 `Chess.Behavior`。Conditional LogicId：`HasTarget`、`IsTargetInRange`、`IsSelfInTargetRange`、`IsTargetDead`、`IsAttackCDReady`、`IsRangeGreaterThanTarget`。Action LogicId：`AttackTarget`、`MoveToTarget`、`MoveAwayFromTarget`、`StopMovement`、`SelectTarget`。从 `BehaviorTreeContext.Owner` 读取 `ChessController`；无索敌目标时目标判定/攻击/移动全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 的 Int 参数 `Mode` 为 `TargetSelectMode`（0=最近，1=最远，2=最低血，3=最高血，4=最长射程，5=最高攻击），缺参视为最近；选中存活敌人才 Success，无存活敌人或非法枚举为 Failure。`IsAttackCDReady` 在 `CooldownRemaining <= 0`（含前摇中）时成立。射程 Conditional 使用 `GetCurrentRange`；死亡目标仍算存在目标并按距离判定。`IsRangeGreaterThanTarget` 在自身当前射程严格大于目标当前射程时成立。Action 只发一次命令，成功后立即 Success，不 Running 等待到达或命中。构建时必须 `ChessBehaviorTreeLogic.Register(registry)` 或 `CreateRunner(definition, owner)`，且 runner 的 owner 传该棋子
 
 ### Behavior Tree Unity Editor
 
 - `Assets/Scripts/Editor/BehaviorTreeGraphAsset.cs` 提供基于 NodeCanvas `GraphEditor` 的行为树编辑源资产，创建菜单为 `Tools > AutoChess > Behavior Tree > Create Asset`
 - 编辑器图只用于可视化和编辑，不使用 NodeCanvas 自带行为树运行时；通过 `Validate`、`Export Bytes` 和 `Export Bytes As...` 导出本项目 `BehaviorTreeDefinition`
 - 源资产默认保存在 `Assets/Configs/BehaviorTrees/`，bytes 默认保存在 `Assets/Resources/Configs/BehaviorTrees/`
-- Action/Conditional 的 LogicId 和参数元数据通过 `BehaviorTreeLogicCatalog` 注册；编辑器参数当前支持 `string`、`int`、`float` 和 `bool`
+- Action/Conditional 的 LogicId 和参数元数据通过 `BehaviorTreeLogicCatalog` 注册；编辑器参数当前支持 `string`、`int`、`float` 和 `bool`。注册 Conditional 时若未声明 `Invert` 会自动追加，默认 false
 - 叶节点 Inspector 用参数列表宿主创建 Odin `PropertyTree` 并跨 GraphEditor 的 Layout/Repaint 缓存；禁止把空 `List` 当作多目标传入 `PropertyTree.Create(IList)`
 - 图节点按类型使用不同标题颜色、左侧图标和窗口内类型标签；叶节点额外显示 LogicId 与参数，复合节点多子连线显示从 1 开始的序号。自定义节点名仍用于编译导出，不覆盖类型识别。
 - `ChessBehaviorTreeLogic` 在编辑器/运行时域加载时幂等注册棋子 Action/Conditional，分类为 `Chess`
@@ -186,7 +187,7 @@
   - `BattleTestSpawnerTests` 覆盖空布阵、多阵营顺序、重复阵营、非法/越界坐标跳过，以及注册失败不影响后续棋子
   - `BehaviorTreeTests` 覆盖节点语义、生命周期、Parallel 策略、黑板、注册构建、UniTask 异步 Action 和二进制往返
   - `BehaviorTreeGraphTests` 覆盖 NodeCanvas 图节点端口、图编译、LogicCatalog、bytes 导出往返，以及叶节点空参数列表的 Odin PropertyTree 宿主绘制与节点类型颜色/图标/正文标签和警告
-  - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、攻击冷却、运行时射程和 LogicId 注册
+  - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、攻击冷却、运行时射程、射程比较、Invert 取反和 LogicId 注册
   - `ChessBehaviorActionTests` 覆盖棋子 Action 的发令即 Success/Failure、攻击/移动/`StopMovement` 副作用、`SelectTarget` 索敌和 LogicId 注册
   - `ChessTargetSelectorTests` 覆盖索敌枚举分发、运行时射程/攻击力、跳过死亡敌人、只剩尸体清空目标和非法枚举保持原目标
   - `ChessCombatBehaviorTreeGraphTests` 覆盖风筝图节点顺序/LogicId/`Mode=0`、提交资产编译，以及无目标索敌、尸体换人、CD 攻击、贴身逃离、射程内停止、超距追击和攻击失败走位
