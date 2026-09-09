@@ -16,16 +16,16 @@ MonoBehaviour:
   Name: "\u8FD1\u6218"
   MaxHp: 1000
   Atk: 20
-  Range: 1
-  MoveSpeed: 10
+  Range: 7
+  MoveSpeed: 15
   AtkSpeed: 1
-  WindUpTime: 0.3
-  BulletSpeed: 0
+  WindUpTime: 0.2
+  BulletSpeed: 50
   MovementEnterBehaviorTree: 
   MovementStayBehaviorTree: ChessCombat
   MovementExitBehaviorTree: 
   AttackEnterBehaviorTree: 
-  AttackStayBehaviorTree: 
+  AttackStayBehaviorTree: ChessCombat
   AttackExitBehaviorTree: 
   DeadEnterBehaviorTree: 
   DeadStayBehaviorTree: 

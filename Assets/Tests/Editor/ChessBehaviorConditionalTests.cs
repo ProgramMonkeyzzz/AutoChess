@@ -9,7 +9,7 @@ using NUnit.Framework;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖棋子目标 Conditional 的索敌、射程比较、死亡判定、攻击冷却、Invert 取反和 LogicId 注册。
+/// 覆盖棋子目标 Conditional 的索敌、射程比较、死亡判定、攻击冷却（不含前摇）、Invert 取反和 LogicId 注册。
 /// </summary>
 public class ChessBehaviorConditionalTests
 {
@@ -128,7 +128,7 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证冷却中攻击冷却 Conditional 失败，前摇期间冷却为 0 时成功。
+    /// 验证冷却中或前摇期间攻击冷却 Conditional 失败，仅冷却结束且不在前摇时成功。
     /// </summary>
     [Test]
     public void IsAttackCDReadyMatchesCooldownAndWindUp()
@@ -143,7 +143,7 @@ public class ChessBehaviorConditionalTests
         Assert.That(_owner.AttackController.CooldownRemaining, Is.EqualTo(0f));
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsAttackCDReady, _owner),
-            Is.EqualTo(NodeStatus.Success));
+            Is.EqualTo(NodeStatus.Failure));
 
         _owner = new ChessController(CreateConfig(100, 5f));
         _owner.RuntimeData.CurrentPosition = Vector2.zero;
@@ -181,12 +181,14 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证目标位于自己射程边界内（含相等）时 IsTargetInRange 成功。
+    /// 验证目标位于自己射程加双方半径的中心距边界内（含相等）时 IsTargetInRange 成功。
     /// </summary>
     [Test]
     public void IsTargetInRangeSucceedsOnExactBoundary()
     {
-        _target.RuntimeData.CurrentPosition = new Vector2(5f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(
+            ChessBaseData.ToCenterDistanceLimit(_owner.BaseData.Range),
+            0f);
 
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
@@ -194,53 +196,58 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证小数距离按精确射程判定，越界失败、界内成功。
+    /// 验证小数距离按精确中心距上限判定，越界失败、界内成功。
     /// </summary>
     [Test]
     public void IsTargetInRangeUsesExactFractionalDistance()
     {
         _owner = new ChessController(CreateConfig(100, 3.5f));
         _owner.RuntimeData.CurrentPosition = Vector2.zero;
-        _target.RuntimeData.CurrentPosition = new Vector2(3.4f, 0f);
+        float limit = ChessBaseData.ToCenterDistanceLimit(3.5f);
+        _target.RuntimeData.CurrentPosition = new Vector2(limit - 0.1f, 0f);
         SelectTarget(_owner, _target);
 
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
             Is.EqualTo(NodeStatus.Success));
 
-        _target.RuntimeData.CurrentPosition = new Vector2(3.6f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(limit + 0.1f, 0f);
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
             Is.EqualTo(NodeStatus.Failure));
     }
 
     /// <summary>
-    /// 验证 IsTargetInRange 使用自己的运行时射程乘区和增量。
+    /// 验证 IsTargetInRange 使用自己的运行时射程乘区和增量，并补偿双方半径。
     /// </summary>
     [Test]
     public void IsTargetInRangeUsesOwnerCurrentRangeModifiers()
     {
-        _target.RuntimeData.CurrentPosition = new Vector2(7.7f, 0f);
         _owner.RuntimeData.CurrentRangeMultipler = 1.5f;
         _owner.RuntimeData.CurrentRangeIncrement = 0.25f;
+        float limit = ChessBaseData.ToCenterDistanceLimit(
+            _owner.RuntimeData.GetCurrentRange(_owner.BaseData.Range));
+        _target.RuntimeData.CurrentPosition = new Vector2(limit - 0.05f, 0f);
 
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
             Is.EqualTo(NodeStatus.Success));
 
-        _target.RuntimeData.CurrentPosition = new Vector2(7.8f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(limit + 0.05f, 0f);
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
             Is.EqualTo(NodeStatus.Failure));
     }
 
     /// <summary>
-    /// 验证自己位于目标射程边界内时 IsSelfInTargetRange 成功。
+    /// 验证自己位于目标射程加双方半径的中心距边界内时 IsSelfInTargetRange 成功。
     /// </summary>
     [Test]
     public void IsSelfInTargetRangeSucceedsOnExactBoundary()
     {
-        _target.RuntimeData.CurrentPosition = new Vector2(4f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(
+            ChessBaseData.ToCenterDistanceLimit(_target.BaseData.Range),
+            0f);
 
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsSelfInTargetRange, _owner),
@@ -248,12 +255,14 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证自己越出目标射程时 IsSelfInTargetRange 失败。
+    /// 验证自己越出目标射程加双方半径时 IsSelfInTargetRange 失败。
     /// </summary>
     [Test]
     public void IsSelfInTargetRangeFailsOutsideTargetRange()
     {
-        _target.RuntimeData.CurrentPosition = new Vector2(4.1f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(
+            ChessBaseData.ToCenterDistanceLimit(_target.BaseData.Range) + 0.1f,
+            0f);
 
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsSelfInTargetRange, _owner),
@@ -261,20 +270,22 @@ public class ChessBehaviorConditionalTests
     }
 
     /// <summary>
-    /// 验证 IsSelfInTargetRange 使用目标的运行时射程乘区和增量。
+    /// 验证 IsSelfInTargetRange 使用目标的运行时射程乘区和增量，并补偿双方半径。
     /// </summary>
     [Test]
     public void IsSelfInTargetRangeUsesTargetCurrentRangeModifiers()
     {
-        _target.RuntimeData.CurrentPosition = new Vector2(6.2f, 0f);
         _target.RuntimeData.CurrentRangeMultipler = 1.5f;
         _target.RuntimeData.CurrentRangeIncrement = 0.25f;
+        float limit = ChessBaseData.ToCenterDistanceLimit(
+            _target.RuntimeData.GetCurrentRange(_target.BaseData.Range));
+        _target.RuntimeData.CurrentPosition = new Vector2(limit - 0.05f, 0f);
 
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsSelfInTargetRange, _owner),
             Is.EqualTo(NodeStatus.Success));
 
-        _target.RuntimeData.CurrentPosition = new Vector2(6.3f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(limit + 0.05f, 0f);
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsSelfInTargetRange, _owner),
             Is.EqualTo(NodeStatus.Failure));
@@ -380,7 +391,9 @@ public class ChessBehaviorConditionalTests
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
             Is.EqualTo(NodeStatus.Success));
 
-        _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(
+            ChessBaseData.ToCenterDistanceLimit(_owner.BaseData.Range) + 0.1f,
+            0f);
         Assert.That(
             TickConditional(ChessBehaviorTreeLogic.IsTargetInRange, _owner),
             Is.EqualTo(NodeStatus.Failure));

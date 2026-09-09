@@ -1,5 +1,7 @@
 using BehaviorTree;
 using Chess;
+using Chess.FSM.State;
+using Config;
 using UnityEngine;
 
 namespace Chess.Behavior
@@ -34,6 +36,24 @@ namespace Chess.Behavior
 
             target = owner.TargetSelector.SelectedChessController;
             return target != null;
+        }
+
+        /// <summary>
+        /// 判断棋子当前是否处于攻击状态或前摇中；此时行为树移动 Action 不得发令。
+        /// </summary>
+        public static bool IsInAttackOrWindUp(ChessController owner)
+        {
+            if (owner == null)
+            {
+                return false;
+            }
+
+            if (owner.Fsm != null && owner.Fsm.CurrentState is AttackState)
+            {
+                return true;
+            }
+
+            return owner.AttackController != null && owner.AttackController.IsWindingUp;
         }
 
         /// <summary>
@@ -74,7 +94,7 @@ namespace Chess.Behavior
         }
 
         /// <summary>
-        /// 判断 from 到 to 的棋盘距离是否不超过 rangeOwner 的当前射程。
+        /// 判断 from 到 to 的棋盘中心距是否不超过 rangeOwner 当前射程加双方碰撞半径。
         /// </summary>
         public static bool IsWithinCurrentRange(
             ChessController from,
@@ -92,7 +112,7 @@ namespace Chess.Behavior
 
             return Vector2.Distance(
                        from.RuntimeData.CurrentPosition,
-                       to.RuntimeData.CurrentPosition) <= range;
+                       to.RuntimeData.CurrentPosition) <= ChessBaseData.ToCenterDistanceLimit(range);
         }
     }
 }

@@ -14,16 +14,16 @@ namespace Chess.Behavior
         /// <summary>当前是否存在索敌目标。</summary>
         public const string HasTarget = "HasTarget";
 
-        /// <summary>当前索敌目标是否在自己的运行时射程内。</summary>
+        /// <summary>当前索敌目标是否在自己的运行时射程内（中心距含双方半径）。</summary>
         public const string IsTargetInRange = "IsTargetInRange";
 
-        /// <summary>自己是否在当前索敌目标的运行时射程内。</summary>
+        /// <summary>自己是否在当前索敌目标的运行时射程内（中心距含双方半径）。</summary>
         public const string IsSelfInTargetRange = "IsSelfInTargetRange";
 
         /// <summary>当前索敌目标是否已经死亡。</summary>
         public const string IsTargetDead = "IsTargetDead";
 
-        /// <summary>当前攻击冷却是否已经结束。</summary>
+        /// <summary>当前攻击冷却是否已经结束且不在前摇。</summary>
         public const string IsAttackCDReady = "IsAttackCDReady";
 
         /// <summary>自己的当前射程是否严格大于索敌目标的当前射程。</summary>

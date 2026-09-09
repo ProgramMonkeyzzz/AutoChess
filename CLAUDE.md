@@ -41,7 +41,7 @@
   - 战斗循环通过 `ChessController.Tick()` 统一驱动当前状态、移动和攻击
 - **ChessBaseData**: 棋子的静态配置数据（从 ScriptableObject 导出）
   - 当前字段：`ConfigId`、`Name`、`MaxHp`、`Atk`、`Range`、`MoveSpeed`、`AtkSpeed`、`WindUpTime`、`BulletSpeed`，以及 9 个可选行为树名（`Movement/Attack/Dead` x `Enter/Stay/Exit`）。配置名对应 `Resources/Configs/BehaviorTrees` 下的 `TextAsset.name`；空白表示不挂树
-  - `Range` 为棋盘 XZ 平面上的浮点攻击距离
+  - `Range` 为棋盘 XZ 平面上的浮点攻击距离；攻击与威胁判定的中心距上限为 `Range + 2 * Radius`
   - `Clone()` 复制静态配置，避免多个棋子实例共享可变数据
   - `ChessBaseDataSo` 使用 `[FormerlySerializedAs("ChessId")]` 将旧字段迁移为 `ConfigId`，并与 `ChessBaseData` 保持一一对应；修改后必须重新导出二进制配置
 - **ChessRuntimeData**: 棋子的运行时可变数据（HP、位置等）
@@ -52,7 +52,7 @@
 - **AttackController**: 单个棋子的自动攻击控制器
   - 仅对 `TargetSelector.SelectedChessController` 中仍存活、处于 `BaseData.Range` 内且当前未在移动的目标自动起手；`AttackTarget()` 仍可在移动中强制开打
   - `AtkSpeed` 表示每秒攻击次数，命中后的攻击间隔为 `1 / AtkSpeed`
-  - 命中前必须完成 `WindUpTime` 前摇；攻击启动时校验射程，前摇期间及结束时仅重新校验目标存活且仍为当前索敌目标，不再检查射程
+  - 命中前必须完成 `WindUpTime` 前摇；攻击启动时校验中心距不超过 `Range + 2 * Radius`，前摇期间及结束时仅重新校验目标存活且仍为当前索敌目标，不再检查射程
   - `AtkSpeed <= 0` 或任一 `AtkSpeed`、`Range`、`WindUpTime` 为负值时不攻击
   - `BulletSpeed > 0` 时发送 `BulletSpawnEvent`，否则直接结算即时伤害
 
@@ -91,11 +91,11 @@
   - Enter 树在状态自身进入逻辑后执行一次，Stay 树在状态自身停留逻辑后使用当前 `deltaTime` 持续推进；Stay 到达 `Success`/`Failure` 后下一 Tick 先 `Reset + Start` 再执行，`Running` 则继续。Exit 树在状态自身退出清理前执行一次。`BehaviorTreeRunner` 自身终态语义不变
   - 状态退出时停止全部行为树并取消异步节点，重新进入时重置三棵树
 - **StateTransition** / **StateTransition<State1, State2>**: 从 `State1` 转到 `State2`，由 `CanTransition()` 决定是否触发
-- **MovementState**: 所有棋子的默认 FSM 初始状态，退出时停止并清理移动控制器
-- **AttackState**: 攻击状态，进入时停止移动，退出时取消攻击前摇并保留已有攻击冷却
+- **MovementState**: 所有棋子的默认 FSM 初始状态，退出时停止并清理移动命令
+- **AttackState**: 攻击状态，进入时停止全部移动（含逃离），退出时取消攻击前摇并保留已有攻击冷却
 - **DeadState**: 棋子 HP 归零后的终止状态，进入时停止并清理移动命令，不注册返回 `MovementState` 的转换
 - **MovementToDeadTransition**: 当棋子运行时 HP 小于等于零时允许从 `MovementState` 切换到 `DeadState`
-- **MovementToAttackTransition** / **AttackToMovementTransition** / **AttackToDeadTransition**: 管理攻击开始、移动中断、前摇结束回切和死亡条件下的状态切换
+- **MovementToAttackTransition** / **AttackToMovementTransition** / **AttackToDeadTransition**: 管理攻击开始、成功移动命令或前摇结束回切和死亡条件下的状态切换；前摇中成功移动会取消前摇且不命中
 
 使用约定：
 
@@ -119,7 +119,7 @@
 - 所有 Conditional 支持 bool 参数 `Invert`（显示名「取反」，默认 false）；为 true 时对 `Evaluate` 的完整结果取反，缺参或无法解析不取反
 - `Blackboard` 使用固定 key 和首次写入的泛型类型传递运行时数据；普通非可空值类型使用池化 `ValueTypeWrap<T>` 保存并在 `Remove`/`Clear` 时回收，`Nullable<T>` 保持原有语义；黑板、注册表和节点状态不参与行为树定义序列化
 - `BehaviorTreeBinarySerializer` 仅用于可信本地数据，使用 `BinaryFormatter` 序列化带版本号的行为树定义
-- 棋子行为树节点位于 `Assets/Scripts/Battle/Chess/Behavior/`，命名空间 `Chess.Behavior`。Conditional LogicId：`HasTarget`、`IsTargetInRange`、`IsSelfInTargetRange`、`IsTargetDead`、`IsAttackCDReady`、`IsRangeGreaterThanTarget`。Action LogicId：`AttackTarget`、`MoveToTarget`、`MoveAwayFromTarget`、`StopMovement`、`SelectTarget`。从 `BehaviorTreeContext.Owner` 读取 `ChessController`；无索敌目标时目标判定/攻击/移动全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 的 Int 参数 `Mode` 为 `TargetSelectMode`（0=最近，1=最远，2=最低血，3=最高血，4=最长射程，5=最高攻击），缺参视为最近；选中存活敌人才 Success，无存活敌人或非法枚举为 Failure。`IsAttackCDReady` 在 `CooldownRemaining <= 0`（含前摇中）时成立。射程 Conditional 使用 `GetCurrentRange`；死亡目标仍算存在目标并按距离判定。`IsRangeGreaterThanTarget` 在自身当前射程严格大于目标当前射程时成立。Action 只发一次命令，成功后立即 Success，不 Running 等待到达或命中。构建时必须 `ChessBehaviorTreeLogic.Register(registry)` 或 `CreateRunner(definition, owner)`，且 runner 的 owner 传该棋子
+- 棋子行为树节点位于 `Assets/Scripts/Battle/Chess/Behavior/`，命名空间 `Chess.Behavior`。Conditional LogicId：`HasTarget`、`IsTargetInRange`、`IsSelfInTargetRange`、`IsTargetDead`、`IsAttackCDReady`、`IsRangeGreaterThanTarget`。Action LogicId：`AttackTarget`、`MoveToTarget`、`MoveAwayFromTarget`、`StopMovement`、`SelectTarget`。从 `BehaviorTreeContext.Owner` 读取 `ChessController`；无索敌目标时目标判定/攻击/移动全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 的 Int 参数 `Mode` 为 `TargetSelectMode`（0=最近，1=最远，2=最低血，3=最高血，4=最长射程，5=最高攻击），缺参视为最近；选中存活敌人才 Success，无存活敌人或非法枚举为 Failure。`IsAttackCDReady` 在 `CooldownRemaining <= 0` 且不在前摇时成立。射程 Conditional 使用 `GetCurrentRange`，中心距上限为射程加双方 `Radius`；死亡目标仍算存在目标并按距离判定。`IsRangeGreaterThanTarget` 在自身当前射程严格大于目标当前射程时成立。Action 只发一次命令，成功后立即 Success，不 Running 等待到达或命中。攻击状态或前摇中 MoveToTarget/MoveAwayFromTarget 失败且不发令，StopMovement 仍可成功。构建时必须 `ChessBehaviorTreeLogic.Register(registry)` 或 `CreateRunner(definition, owner)`，且 runner 的 owner 传该棋子
 
 ### Behavior Tree Unity Editor
 
@@ -130,7 +130,7 @@
 - 叶节点 Inspector 用参数列表宿主创建 Odin `PropertyTree` 并跨 GraphEditor 的 Layout/Repaint 缓存；禁止把空 `List` 当作多目标传入 `PropertyTree.Create(IList)`
 - 图节点按类型使用不同标题颜色、左侧图标和窗口内类型标签；叶节点额外显示 LogicId 与参数，复合节点多子连线显示从 1 开始的序号。自定义节点名仍用于编译导出，不覆盖类型识别。
 - `ChessBehaviorTreeLogic` 在编辑器/运行时域加载时幂等注册棋子 Action/Conditional，分类为 `Chess`
-- 棋子风筝图源资产为 `Assets/Configs/BehaviorTrees/ChessCombat.asset`；菜单 `Tools > AutoChess > Behavior Tree > Rebuild Chess Combat Asset` 只重建该图且不导出 bytes。现有 `BehaviorTree.asset` 示例图保留。Test0/Test1 的 `MovementStayBehaviorTree` 填 `ChessCombat`，创建棋子时按配置部署
+- 棋子战斗图源资产为 `Assets/Configs/BehaviorTrees/ChessCombat.asset`。菜单 `Rebuild Chess Combat Asset` 只重建该图且不导出 bytes；`Rebuild And Export Chess Combat` 会导出 bytes。现有 `BehaviorTree.asset` 示例图保留。CombatSelector 为 Attack、超距 Chase（`IsTargetInRange` Invert）、自身射程更长则 Flee、相对近战且自身在目标射程外则 Chase，否则 Hold。Test0/Test1 的移动 Stay 和攻击 Stay 都填 `ChessCombat`；攻击 Stay 期间移动 Action 失败不发令，创建棋子时按配置部署
 
 ### Config Pipeline
 
@@ -180,7 +180,7 @@
   - `CampManagerTests` 覆盖工厂注册、出生点写入、按 `ConfigId` 分组、按 `UniqueId` 索引，以及 `AgentId` 相同后再按 `UniqueId` 的稳定排序
   - `FSMTests` 覆盖棋子 FSM 的启动/切换生命周期、Tick 先转换后 Stay、首个满足条件的转换优先、重复/跨实例注册校验，以及状态行为树的阶段顺序、时间步、Stay 终态每帧重跑、重入和取消
   - `ChessMovementControllerTests` 覆盖移动命令、远离目标刷新/贴边、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
-  - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、跨阶段时间步、目标失效取消及缴械配置
+  - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、前摇中停止逃离、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
   - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建、BattleManager 帧发布和 `HpProgress`
   - `UIHpTests` 覆盖受伤棋子血条创建/满血清除、父子关系以及 `HpTransform` 世界到屏幕同步
@@ -190,7 +190,7 @@
   - `ChessBehaviorConditionalTests` 覆盖棋子目标 Conditional 的无目标失败、死亡判定、攻击冷却、运行时射程、射程比较、Invert 取反和 LogicId 注册
   - `ChessBehaviorActionTests` 覆盖棋子 Action 的发令即 Success/Failure、攻击/移动/`StopMovement` 副作用、`SelectTarget` 索敌和 LogicId 注册
   - `ChessTargetSelectorTests` 覆盖索敌枚举分发、运行时射程/攻击力、跳过死亡敌人、只剩尸体清空目标和非法枚举保持原目标
-  - `ChessCombatBehaviorTreeGraphTests` 覆盖风筝图节点顺序/LogicId/`Mode=0`、提交资产编译，以及无目标索敌、尸体换人、CD 攻击、贴身逃离、射程内停止、超距追击和攻击失败走位
+  - `ChessCombatBehaviorTreeGraphTests` 覆盖相对射程战斗图的节点顺序/LogicId/`Mode=0`、提交资产编译，以及无目标索敌、尸体换人、CD 攻击、更长逃离、更短站桩、前摇中不移动、超距追击
 - 在 Unity 编辑器中选择 `Window > General > Test Runner`，切换到 `EditMode` 页签后点击 `Run All`。
 - 也可以在项目根目录使用 PowerShell 批量运行测试（按本机 Unity Hub 的实际安装位置调整 `$UnityEditor`）：
 
@@ -264,8 +264,8 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 进入 `DeadState` 会停止并清除移动命令，死亡棋子拒绝新的移动命令，且不注册 `DeadState` 到 `MovementState` 的反向转换
 - `ChessController.Tick()` 会按 FSM、移动、攻击顺序更新；也可调用 `Tick(float deltaTime)` 精确推进攻击时间
 - 攻击伤害取攻击方 `ChessBaseData.Atk`，首次满足目标、射程且当前未在移动时自动开始前摇；`AttackTarget()` 可在移动中强制起手。前摇锁定后目标离开射程仍会完成攻击，命中后才开始下一次攻击冷却
-- 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止移动，退出取消前摇并保留冷却
-- 攻击状态下成功移动命令或不在前摇期间立即切回 `MovementState`，HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
+- 合法攻击流程开始时立即从 `MovementState` 切换到 `AttackState`；`AttackState` 进入停止全部移动（含逃离），退出取消前摇并保留冷却
+- 攻击状态下成功移动命令或不在前摇期间立即切回 `MovementState`；前摇中成功移动会取消前摇且不命中；HP 归零切换到 `DeadState`；不注册死亡状态的反向转换
 - `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
 - 子弹在创建时快照攻击者当前攻击力，飞行期间攻击力变化不影响命中伤害
 - 子弹命中后必须从活动集合移除并归还 `ObjectPool`，不得重复结算或重复回收
@@ -273,7 +273,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - NodeCanvas 原生 `BehaviourTree` 资产与本项目 `BehaviorTreeGraphAsset` 不兼容，不要混用两套运行时
 - 叶节点 Inspector 不能把参数 `List` 直接传给 `PropertyTree.Create(IList)`；空列表会抛出 `There must be at least one target` 并打乱 GraphEditor 的 GUILayout
 - 未注册到 `BehaviorTreeLogicCatalog` 的 LogicId 仍可手动导出，但编辑器会显示警告；运行时必须另行注册对应工厂
-- 构建棋子行为树时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 `BehaviorTreeRunner` 的 owner 传该 `ChessController`；目标 Conditional/攻击/移动 Action 无索敌目标时全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 按 Int `Mode` 索敌并跳过死亡敌人，选中存活敌人才 Success。射程 Conditional 走 `GetCurrentRange`；Action 发令成功后立即 Success，持续追踪/远离由移动控制器负责。创建棋子按 `ChessBaseData` 的 9 个树名部署，空白不挂树，缺树只跳过该槽并打错误日志。风筝图只提交 `Assets/Configs/BehaviorTrees/ChessCombat.asset`，重建菜单不导出 `.bytes`；Test0/Test1 的移动 Stay 填 `ChessCombat`
+- 构建棋子行为树时必须 `ChessBehaviorTreeLogic.Register(registry)`，且 `BehaviorTreeRunner` 的 owner 传该 `ChessController`；目标 Conditional/攻击/移动 Action 无索敌目标时全部失败，`StopMovement` 与 `IsAttackCDReady` 不要求目标。`SelectTarget` 按 Int `Mode` 索敌并跳过死亡敌人，选中存活敌人才 Success。射程 Conditional 走 `GetCurrentRange` 并按中心距加双方半径判定；Action 发令成功后立即 Success，持续追踪/远离由移动控制器负责；攻击状态或前摇中移动 Action 失败不发令。创建棋子按 `ChessBaseData` 的 9 个树名部署，空白不挂树，缺树只跳过该槽并打错误日志。相对射程战斗图提交 `ChessCombat.asset`；重建菜单不导出 `.bytes`，`Rebuild And Export Chess Combat` 会导出 bytes。Test0/Test1 的移动 Stay 和攻击 Stay 填 `ChessCombat`
 - 战斗线程不得直接读写 `ChessView`/`BulletView`/`UIHpBar`；表现同步只走 `BattleRenderFrame`，死亡棋子和命中子弹从快照消失后由 `RenderManager` 销毁视图，血条由 `UIHp` 销毁
 - 血条必须挂在 `UIHp` 下并用 `Camera.main` + Canvas 相机做世界到屏幕换算，不得把 `UIHpBar` 设为 `_hpTransform` 子节点；满血或死亡不显示
 - SampleScene 的 `BattleTestRunner` 默认空列表，Play 后不会自动生成棋子，需在 Inspector 填写阵营和出生点

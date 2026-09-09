@@ -53,6 +53,9 @@ namespace Chess
         /// <summary>当前是否仍需向命令目标移动。</summary>
         public bool IsMoving => _hasDestination && !HasReachedDestination;
 
+        /// <summary>当前是否正在执行远离目标命令。</summary>
+        public bool IsFleeing => _movementMode == MovementMode.FleeTarget && _hasDestination;
+
         /// <summary>当前命令是否已到达固定点、目标安全距离或远离终点。</summary>
         public bool HasReachedDestination
         {

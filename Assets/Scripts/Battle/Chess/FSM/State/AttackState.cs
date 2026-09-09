@@ -3,7 +3,7 @@ using BehaviorTree;
 namespace Chess.FSM.State
 {
     /// <summary>
-    /// 棋子的攻击状态，进入时停止移动，退出时取消当前攻击前摇。
+    /// 棋子的攻击状态，进入时停止全部移动，退出时取消当前攻击前摇。
     /// </summary>
     public class AttackState : StateBase
     {
@@ -24,7 +24,7 @@ namespace Chess.FSM.State
         }
 
         /// <summary>
-        /// 进入攻击状态时停止并清理当前移动命令。
+        /// 进入攻击状态时停止并清理当前移动命令，前摇期间保持站桩。
         /// </summary>
         protected override void OnStateEnterCore()
         {

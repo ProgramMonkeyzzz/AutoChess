@@ -139,7 +139,7 @@ public class ChessMovementControllerTests
         Assert.That(_movement.HasReachedDestination, Is.False);
     }
 
-    /// <summary>验证进入攻击或死亡状态时 Stop 会清除移动命令。</summary>
+    /// <summary>验证进入攻击状态时会停止移动，前摇中新的定点移动会立刻回切并取消前摇，进入死亡状态时仍会停止移动。</summary>
     [Test]
     public void StateExitStopsMovementCommand()
     {
@@ -153,11 +153,40 @@ public class ChessMovementControllerTests
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
         Assert.That(_movement.HasDestination, Is.False);
 
+        int hpBefore = target.RuntimeData.Hp;
         Assert.That(_movement.MoveToPosition(new Vector2(7f, 8f)), Is.True);
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.False);
+        Assert.That(_movement.HasDestination, Is.True);
+        _owner.Tick(0.5f);
+        Assert.That(target.RuntimeData.Hp, Is.EqualTo(hpBefore));
+        Assert.That(_owner.AttackController.IsWindingUp, Is.False);
+
         _owner.DamageReceiver.ApplyDamage(1000);
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<DeadState>());
         Assert.That(_movement.HasDestination, Is.False);
+    }
+
+    /// <summary>验证前摇中直接下达远离命令会取消前摇且不会命中。</summary>
+    [Test]
+    public void MoveAwayFromTargetDuringWindUpCancelsAttackWithoutHit()
+    {
+        ChessController target = new ChessController(CreateConfig(100, 1f));
+        target.RuntimeData.CurrentPosition = new Vector2(3f, 4f);
+        SelectTarget(_owner, target);
+        _owner.BaseData.WindUpTime = 0.5f;
+        _owner.AttackController.AttackTarget();
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.True);
+
+        int hpBefore = target.RuntimeData.Hp;
+        Assert.That(_movement.MoveAwayFromTarget(target), Is.True);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.False);
+        Assert.That(_movement.IsFleeing, Is.True);
+        _owner.Tick(0.5f);
+        Assert.That(target.RuntimeData.Hp, Is.EqualTo(hpBefore));
+        Assert.That(_owner.AttackController.IsWindingUp, Is.False);
     }
 
     /// <summary>验证死亡棋子拒绝新的移动命令。</summary>

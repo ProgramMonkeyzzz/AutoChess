@@ -16,18 +16,18 @@ using UnityEditor;
 using UnityEngine;
 
 /// <summary>
-/// 覆盖棋子风筝行为树图结构、资产编译和决策分支。
+/// 覆盖相对射程战斗行为树的图结构、资产编译和决策分支。
 /// </summary>
 public class ChessCombatBehaviorTreeGraphTests
 {
-    /// <summary>由 builder 编译得到的风筝行为树定义。</summary>
+    /// <summary>由 builder 编译得到的战斗行为树定义。</summary>
     private BehaviorTreeDefinition _definition;
 
     /// <summary>移动相关测试使用的导航管理器。</summary>
     private NavigationManager _navigation;
 
     /// <summary>
-    /// 编译风筝行为树定义。
+    /// 编译战斗行为树定义。
     /// </summary>
     [SetUp]
     public void SetUp()
@@ -55,7 +55,7 @@ public class ChessCombatBehaviorTreeGraphTests
     }
 
     /// <summary>
-    /// 验证 builder 编译出的节点顺序、LogicId 和 SelectTarget Mode。
+    /// 验证 builder 编译出的节点顺序、LogicId、Invert 和 SelectTarget Mode。
     /// </summary>
     [Test]
     public void BuilderCompilesExpectedKitingTree()
@@ -132,12 +132,12 @@ public class ChessCombatBehaviorTreeGraphTests
     }
 
     /// <summary>
-    /// 验证冷却未就绪且自己在目标射程内时逃离。
+    /// 验证冷却未就绪、自己射程更长且已被威胁时逃离。
     /// </summary>
     [Test]
-    public void CooldownNotReadyAndThreatenedFlees()
+    public void LongerRangeFleesWhenThreatened()
     {
-        CombatPair pair = CreateCombatPair(new Vector2(3f, 0f), 8f);
+        CombatPair pair = CreateCombatPair(new Vector2(3f, 0f), 8f, 10f);
         BindMovement(pair.Owner);
         pair.Owner.AttackController.AttackTarget();
         Assert.That(pair.Owner.AttackController.CooldownRemaining, Is.GreaterThan(0f));
@@ -145,14 +145,53 @@ public class ChessCombatBehaviorTreeGraphTests
         Assert.That(TickCombat(pair.Owner), Is.EqualTo(NodeStatus.Success));
         Assert.That(pair.Owner.MovementController.HasDestination, Is.True);
         Assert.That(pair.Owner.MovementController.TargetChess, Is.SameAs(pair.Target));
+        Assert.That(pair.Owner.MovementController.IsFleeing, Is.True);
         Assert.That(pair.Owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
     }
 
     /// <summary>
-    /// 验证冷却未就绪、自己打得到且不被威胁时停止移动。
+    /// 验证自己射程更短且双方都能打到时不逃离，改为停止移动。
     /// </summary>
     [Test]
-    public void CooldownNotReadyAndSafeInRangeStops()
+    public void ShorterRangeStopsWhenInBothRanges()
+    {
+        CombatPair pair = CreateCombatPair(new Vector2(3f, 0f), 8f);
+        BindMovement(pair.Owner);
+        pair.Owner.AttackController.AttackTarget();
+        Assert.That(pair.Owner.AttackController.CooldownRemaining, Is.GreaterThan(0f));
+        Assert.That(pair.Owner.MovementController.MoveToTarget(pair.Target), Is.True);
+
+        Assert.That(TickCombat(pair.Owner), Is.EqualTo(NodeStatus.Success));
+        Assert.That(pair.Owner.MovementController.HasDestination, Is.False);
+        Assert.That(pair.Owner.MovementController.IsFleeing, Is.False);
+    }
+
+    /// <summary>
+    /// 验证前摇中射程更长的棋子不会发移动指令，仍保持攻击前摇和站桩。
+    /// </summary>
+    [Test]
+    public void WindUpLongRangeDoesNotFleeAndKeepsAttackState()
+    {
+        CombatPair pair = CreateCombatPair(new Vector2(3f, 0f), 8f, 10f, 0.5f);
+        BindMovement(pair.Owner);
+        pair.Owner.AttackController.AttackTarget();
+        Assert.That(pair.Owner.AttackController.IsWindingUp, Is.True);
+        Assert.That(pair.Owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        int hpBefore = pair.Target.RuntimeData.Hp;
+
+        Assert.That(TickCombat(pair.Owner), Is.EqualTo(NodeStatus.Success));
+        Assert.That(pair.Owner.MovementController.HasDestination, Is.False);
+        Assert.That(pair.Owner.MovementController.IsFleeing, Is.False);
+        Assert.That(pair.Owner.AttackController.IsWindingUp, Is.True);
+        Assert.That(pair.Owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(pair.Target.RuntimeData.Hp, Is.EqualTo(hpBefore));
+    }
+
+    /// <summary>
+    /// 验证冷却未就绪、自己打得到且射程更长、自身不在目标射程内时逃离。
+    /// </summary>
+    [Test]
+    public void LongerRangeFleesWhenSafeInRange()
     {
         CombatPair pair = CreateCombatPair(new Vector2(3f, 0f), 1f);
         BindMovement(pair.Owner);
@@ -162,7 +201,9 @@ public class ChessCombatBehaviorTreeGraphTests
         Assert.That(pair.Owner.MovementController.HasDestination, Is.True);
 
         Assert.That(TickCombat(pair.Owner), Is.EqualTo(NodeStatus.Success));
-        Assert.That(pair.Owner.MovementController.HasDestination, Is.False);
+        Assert.That(pair.Owner.MovementController.HasDestination, Is.True);
+        Assert.That(pair.Owner.MovementController.IsFleeing, Is.True);
+        Assert.That(pair.Owner.MovementController.TargetChess, Is.SameAs(pair.Target));
     }
 
     /// <summary>
@@ -180,6 +221,7 @@ public class ChessCombatBehaviorTreeGraphTests
         Assert.That(TickCombat(pair.Owner), Is.EqualTo(NodeStatus.Success));
         Assert.That(pair.Owner.MovementController.HasDestination, Is.True);
         Assert.That(pair.Owner.MovementController.TargetChess, Is.SameAs(pair.Target));
+        Assert.That(pair.Owner.MovementController.IsFleeing, Is.False);
     }
 
     /// <summary>
@@ -196,10 +238,11 @@ public class ChessCombatBehaviorTreeGraphTests
         Assert.That(pair.Owner.AttackController.IsAttackInProgress, Is.False);
         Assert.That(pair.Owner.MovementController.HasDestination, Is.True);
         Assert.That(pair.Owner.MovementController.TargetChess, Is.SameAs(pair.Target));
+        Assert.That(pair.Owner.MovementController.IsFleeing, Is.False);
     }
 
     /// <summary>
-    /// 断言风筝树的节点类型、LogicId 和 SelectTarget Mode。
+    /// 断言战斗树的节点类型、LogicId、Invert 和 SelectTarget Mode。
     /// </summary>
     private static void AssertCombatTreeStructure(BehaviorTreeDefinition definition)
     {
@@ -215,22 +258,32 @@ public class ChessCombatBehaviorTreeGraphTests
         SequenceNodeData combat = Child<SequenceNodeData>(rootSelector, 1);
         AssertLogic(Child<ConditionalNodeData>(combat, 0), ChessBehaviorTreeLogic.HasTarget);
         SelectorNodeData combatSelector = Child<SelectorNodeData>(combat, 1);
-        Assert.That(combatSelector.Children.Count, Is.EqualTo(2));
+        Assert.That(combatSelector.Children.Count, Is.EqualTo(5));
 
         SequenceNodeData attack = Child<SequenceNodeData>(combatSelector, 0);
         AssertLogic(Child<ConditionalNodeData>(attack, 0), ChessBehaviorTreeLogic.IsAttackCDReady);
-        AssertLogic(Child<ActionNodeData>(attack, 1), ChessBehaviorTreeLogic.AttackTarget);
+        AssertLogic(Child<ConditionalNodeData>(attack, 1), ChessBehaviorTreeLogic.IsTargetInRange);
+        AssertLogic(Child<ActionNodeData>(attack, 2), ChessBehaviorTreeLogic.AttackTarget);
 
-        SelectorNodeData kiting = Child<SelectorNodeData>(combatSelector, 1);
-        SequenceNodeData flee = Child<SequenceNodeData>(kiting, 0);
-        AssertLogic(Child<ConditionalNodeData>(flee, 0), ChessBehaviorTreeLogic.IsSelfInTargetRange);
+        SequenceNodeData chase = Child<SequenceNodeData>(combatSelector, 1);
+        AssertLogic(Child<ConditionalNodeData>(chase, 0), ChessBehaviorTreeLogic.IsTargetInRange, true);
+        AssertLogic(Child<ActionNodeData>(chase, 1), ChessBehaviorTreeLogic.MoveToTarget);
+
+        SequenceNodeData flee = Child<SequenceNodeData>(combatSelector, 2);
+        AssertLogic(Child<ConditionalNodeData>(flee, 0), ChessBehaviorTreeLogic.IsRangeGreaterThanTarget);
         AssertLogic(Child<ActionNodeData>(flee, 1), ChessBehaviorTreeLogic.MoveAwayFromTarget);
 
-        SelectorNodeData holdOrChase = Child<SelectorNodeData>(kiting, 1);
-        SequenceNodeData hold = Child<SequenceNodeData>(holdOrChase, 0);
-        AssertLogic(Child<ConditionalNodeData>(hold, 0), ChessBehaviorTreeLogic.IsTargetInRange);
-        AssertLogic(Child<ActionNodeData>(hold, 1), ChessBehaviorTreeLogic.StopMovement);
-        AssertLogic(Child<ActionNodeData>(holdOrChase, 1), ChessBehaviorTreeLogic.MoveToTarget);
+        SequenceNodeData shorterSafe = Child<SequenceNodeData>(combatSelector, 3);
+        AssertLogic(
+            Child<ConditionalNodeData>(shorterSafe, 0),
+            ChessBehaviorTreeLogic.IsRangeGreaterThanTarget,
+            true);
+        AssertLogic(
+            Child<ConditionalNodeData>(shorterSafe, 1),
+            ChessBehaviorTreeLogic.IsSelfInTargetRange,
+            true);
+        AssertLogic(Child<ActionNodeData>(shorterSafe, 2), ChessBehaviorTreeLogic.MoveToTarget);
+        AssertLogic(Child<ActionNodeData>(combatSelector, 4), ChessBehaviorTreeLogic.StopMovement);
 
         AssertSelectTarget(Child<ActionNodeData>(rootSelector, 2));
     }
@@ -248,9 +301,9 @@ public class ChessCombatBehaviorTreeGraphTests
     }
 
     /// <summary>
-    /// 断言叶节点 LogicId。
+    /// 断言叶节点 LogicId，Conditional 可同时断言 Invert。
     /// </summary>
-    private static void AssertLogic(NodeData node, string logicId)
+    private static void AssertLogic(NodeData node, string logicId, bool invert = false)
     {
         var action = node as ActionNodeData;
         if (action != null)
@@ -262,6 +315,15 @@ public class ChessCombatBehaviorTreeGraphTests
         var conditional = node as ConditionalNodeData;
         Assert.That(conditional, Is.Not.Null);
         Assert.That(conditional.LogicId, Is.EqualTo(logicId));
+        bool actualInvert = false;
+        if (conditional.Parameters != null
+            && conditional.Parameters.TryGetValue(ConditionalNode.InvertParameterKey, out object raw)
+            && raw != null)
+        {
+            actualInvert = Convert.ToBoolean(raw);
+        }
+
+        Assert.That(actualInvert, Is.EqualTo(invert));
     }
 
     /// <summary>
@@ -277,7 +339,7 @@ public class ChessCombatBehaviorTreeGraphTests
     }
 
     /// <summary>
-    /// 推进一次风筝行为树。
+    /// 推进一次战斗行为树。
     /// </summary>
     private NodeStatus TickCombat(ChessController owner)
     {
@@ -289,11 +351,15 @@ public class ChessCombatBehaviorTreeGraphTests
     }
 
     /// <summary>
-    /// 创建带默认配置的双方棋子，并把目标设为当前索敌目标。
+    /// 创建双方棋子并把目标设为当前索敌目标；可覆盖己方射程和前摇。
     /// </summary>
-    private static CombatPair CreateCombatPair(Vector2 targetPosition, float targetRange)
+    private static CombatPair CreateCombatPair(
+        Vector2 targetPosition,
+        float targetRange,
+        float ownerRange = 5f,
+        float windUpTime = 0f)
     {
-        CampManager camps = CreateCamps();
+        CampManager camps = CreateCamps(ownerRange, windUpTime);
         ChessController owner = camps.RegisterChess(1, 1, Vector2.zero);
         ChessController target = camps.RegisterChess(2, 1, targetPosition);
         target.BaseData.Range = targetRange;
@@ -302,12 +368,12 @@ public class ChessCombatBehaviorTreeGraphTests
     }
 
     /// <summary>
-    /// 创建已注册棋子配置的阵营管理器。
+    /// 创建已注册棋子配置的阵营管理器，可指定己方射程和前摇。
     /// </summary>
-    private static CampManager CreateCamps()
+    private static CampManager CreateCamps(float ownerRange = 5f, float windUpTime = 0f)
     {
         var configs = new ChessConfigRepository();
-        configs.Register(CreateConfig(1, 5f, 0f));
+        configs.Register(CreateConfig(1, ownerRange, windUpTime));
         return new CampManager(configs);
     }
 

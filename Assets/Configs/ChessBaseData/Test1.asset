@@ -17,15 +17,15 @@ MonoBehaviour:
   MaxHp: 500
   Atk: 30
   Range: 10
-  MoveSpeed: 5
+  MoveSpeed: 10
   AtkSpeed: 1
-  WindUpTime: 1
-  BulletSpeed: 5
+  WindUpTime: 0.3
+  BulletSpeed: 25
   MovementEnterBehaviorTree: 
   MovementStayBehaviorTree: ChessCombat
   MovementExitBehaviorTree: 
   AttackEnterBehaviorTree: 
-  AttackStayBehaviorTree: 
+  AttackStayBehaviorTree: ChessCombat
   AttackExitBehaviorTree: 
   DeadEnterBehaviorTree: 
   DeadStayBehaviorTree: 

@@ -74,14 +74,16 @@ public class AttackControllerTests
     }
 
     /// <summary>
-    /// 验证浮点射程按棋盘距离精确判定，允许 3.5 射程命中 3.4 距离目标。
+    /// 验证浮点射程按补偿双方半径后的中心距精确判定，允许命中上限内的目标。
     /// </summary>
     [Test]
     public void FractionalRangeHitsTargetInsideExactDistance()
     {
         _attacker = new ChessController(CreateConfig(100, 12, 3.5f, 2, 0f));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
-        _target.RuntimeData.CurrentPosition = new Vector2(3.4f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(
+            ChessBaseData.ToCenterDistanceLimit(3.5f) - 0.1f,
+            0f);
         SelectTarget(_attacker, _target);
 
         _attacker.AttackController.Tick(0f);
@@ -90,14 +92,16 @@ public class AttackControllerTests
     }
 
     /// <summary>
-    /// 验证浮点射程不会把略超出距离的目标当作可攻击目标。
+    /// 验证浮点射程不会把略超出中心距上限的目标当作可攻击目标。
     /// </summary>
     [Test]
     public void FractionalRangeDoesNotHitTargetOutsideExactDistance()
     {
         _attacker = new ChessController(CreateConfig(100, 12, 3.5f, 2, 0f));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
-        _target.RuntimeData.CurrentPosition = new Vector2(3.6f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(
+            ChessBaseData.ToCenterDistanceLimit(3.5f) + 0.1f,
+            0f);
         SelectTarget(_attacker, _target);
 
         _attacker.AttackController.Tick(0f);
@@ -226,7 +230,7 @@ public class AttackControllerTests
     public void TargetLeavingRangeDuringWindUpStillTakesDamage()
     {
         _attacker.AttackController.Tick(0f);
-        _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(ChessBaseData.ToCenterDistanceLimit(5f) + 0.1f, 0f);
 
         _attacker.AttackController.Tick(0.5f);
 
@@ -244,7 +248,7 @@ public class AttackControllerTests
     {
         _attacker = new ChessController(CreateConfig(100, 12, 5, 2, windUpTime));
         _attacker.RuntimeData.CurrentPosition = Vector2.zero;
-        _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(ChessBaseData.ToCenterDistanceLimit(5f) + 0.1f, 0f);
         SelectTarget(_attacker, _target);
 
         _attacker.AttackController.Tick(0.5f);
@@ -360,7 +364,7 @@ public class AttackControllerTests
             SelectTarget(_attacker, _target);
 
             _attacker.Tick(0f);
-            _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+            _target.RuntimeData.CurrentPosition = new Vector2(ChessBaseData.ToCenterDistanceLimit(5f) + 0.1f, 0f);
             _attacker.Tick(0.5f);
 
             Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
@@ -400,7 +404,7 @@ public class AttackControllerTests
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
 
         SelectTarget(_attacker, _target);
-        _target.RuntimeData.CurrentPosition = new Vector2(6f, 0f);
+        _target.RuntimeData.CurrentPosition = new Vector2(ChessBaseData.ToCenterDistanceLimit(5f) + 0.1f, 0f);
         _attacker.AttackController.Tick(1f);
         Assert.That(_target.RuntimeData.Hp, Is.EqualTo(100));
 
@@ -468,7 +472,7 @@ public class AttackControllerTests
     }
 
     /// <summary>
-    /// 验证 AttackTarget() 在移动中仍能强制起手并停止移动。
+    /// 验证 AttackTarget() 在移动中仍能强制起手并停止当前移动。
     /// </summary>
     [Test]
     public void AttackTargetStartsAttackWhileMovingAndStopsMovement()
@@ -481,6 +485,24 @@ public class AttackControllerTests
 
         Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
         Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_attacker.MovementController.HasDestination, Is.False);
+    }
+
+    /// <summary>
+    /// 验证前摇开始时会停止已有的逃离命令，并留在攻击状态。
+    /// </summary>
+    [Test]
+    public void AttackTargetStopsFleeMovementDuringWindUp()
+    {
+        BindAttackerMovement(new Vector2(2f, 4f));
+        _target.RuntimeData.CurrentPosition = new Vector2(5f, 4f);
+        Assert.That(_attacker.MovementController.MoveAwayFromTarget(_target), Is.True);
+
+        _attacker.AttackController.AttackTarget();
+
+        Assert.That(_attacker.AttackController.IsWindingUp, Is.True);
+        Assert.That(_attacker.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_attacker.MovementController.IsFleeing, Is.False);
         Assert.That(_attacker.MovementController.HasDestination, Is.False);
     }
 

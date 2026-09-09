@@ -196,7 +196,7 @@ namespace Chess
         }
 
         /// <summary>
-        /// 检查目标是否满足攻击启动条件，包括当前索敌目标、存活状态和攻击射程。
+        /// 检查目标是否满足攻击启动条件，包括当前索敌目标、存活状态，以及中心距不超过射程加双方半径。
         /// </summary>
         private bool IsValidAttackStartTarget(ChessController target)
         {
@@ -206,7 +206,8 @@ namespace Chess
             }
 
             return Vector2.Distance(_chessController.RuntimeData.CurrentPosition,
-                       target.RuntimeData.CurrentPosition) <= _chessController.BaseData.Range;
+                       target.RuntimeData.CurrentPosition)
+                   <= ChessBaseData.ToCenterDistanceLimit(_chessController.BaseData.Range);
         }
 
         /// <summary>

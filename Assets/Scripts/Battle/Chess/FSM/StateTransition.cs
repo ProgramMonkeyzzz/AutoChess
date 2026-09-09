@@ -95,7 +95,7 @@ namespace Chess.FSM
     }
 
     /// <summary>
-    /// 攻击状态下出现有效移动命令，或当前不在攻击前摇期间时，切换回移动状态。
+    /// 攻击状态下存在移动命令，或不在前摇期间时，切换回移动状态。
     /// </summary>
     public sealed class AttackToMovementTransition : StateTransition<AttackState, MovementState>
     {

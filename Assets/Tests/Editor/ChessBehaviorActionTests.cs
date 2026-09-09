@@ -184,23 +184,54 @@ public class ChessBehaviorActionTests
     }
 
     /// <summary>
-    /// 验证向目标移动 Action 成功后建立命令并切回移动状态。
+    /// 验证攻击前摇期间行为树不得发出移动命令，直接调用移动控制器才会取消前摇且不命中。
     /// </summary>
     [Test]
-    public void MoveToTargetSucceedsAndEntersMovementState()
+    public void MoveToTargetFailsDuringAttackWindUpWithoutCancelling()
     {
         BindOwnerMovement();
         _owner.AttackController.AttackTarget();
         Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.True);
+        int hpBefore = _target.RuntimeData.Hp;
 
         Assert.That(
             TickAction(ChessBehaviorTreeLogic.MoveToTarget, _owner),
-            Is.EqualTo(NodeStatus.Success));
+            Is.EqualTo(NodeStatus.Failure));
+        Assert.That(_owner.MovementController.HasDestination, Is.False);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.True);
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(hpBefore));
+
+        Assert.That(_owner.MovementController.MoveToTarget(_target), Is.True);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.False);
         Assert.That(_owner.MovementController.HasDestination, Is.True);
         Assert.That(_owner.MovementController.TargetChess, Is.SameAs(_target));
-        Assert.That(_owner.MovementController.Destination.x, Is.EqualTo(7f).Within(0.0001f));
-        Assert.That(_owner.MovementController.Destination.y, Is.EqualTo(10f).Within(0.0001f));
-        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<MovementState>());
+        _owner.Tick(0.5f);
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(hpBefore));
+    }
+
+    /// <summary>
+    /// 验证攻击前摇期间远离 Action 失败且不取消前摇。
+    /// </summary>
+    [Test]
+    public void MoveAwayFromTargetFailsDuringAttackWindUpWithoutCancelling()
+    {
+        BindOwnerMovement();
+        _owner.AttackController.AttackTarget();
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.True);
+        int hpBefore = _target.RuntimeData.Hp;
+
+        Assert.That(
+            TickAction(ChessBehaviorTreeLogic.MoveAwayFromTarget, _owner),
+            Is.EqualTo(NodeStatus.Failure));
+        Assert.That(_owner.MovementController.HasDestination, Is.False);
+        Assert.That(_owner.MovementController.IsFleeing, Is.False);
+        Assert.That(_owner.Fsm.CurrentState, Is.TypeOf<AttackState>());
+        Assert.That(_owner.AttackController.IsWindingUp, Is.True);
+        Assert.That(_target.RuntimeData.Hp, Is.EqualTo(hpBefore));
     }
 
     /// <summary>

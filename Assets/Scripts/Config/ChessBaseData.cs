@@ -7,13 +7,21 @@ namespace Config
     public class ChessBaseData
     {
         public const float Radius = 0.5f;
+
+        /// <summary>
+        /// 将棋盘射程转换为双方中心点距离上限，补偿双方各 Radius 的碰撞半径。
+        /// </summary>
+        public static float ToCenterDistanceLimit(float range)
+        {
+            return range + Radius * 2f;
+        }
         
         /// <summary>棋子静态配置 ID，同一配置可对应多个 UniqueId 实例。</summary>
         public int ConfigId;
         public string Name;
         public int MaxHp;
         public int Atk;
-        /// <summary>棋子的基础攻击射程，使用棋盘 XZ 平面距离。</summary>
+        /// <summary>棋子的基础攻击射程，使用棋盘 XZ 平面距离；判定中心距时会加上双方 Radius。</summary>
         public float Range;
         /// <summary>棋子的基础移动速度。</summary>
         public float MoveSpeed;

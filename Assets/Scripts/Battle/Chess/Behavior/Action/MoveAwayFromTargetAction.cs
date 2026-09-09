@@ -9,7 +9,7 @@ namespace Chess.Behavior
     public sealed class MoveAwayFromTargetAction : ActionNode
     {
         /// <summary>
-        /// 尝试远离当前索敌目标；无目标、无移动控制器或命令被拒绝时失败。
+        /// 尝试远离当前索敌目标；无目标、无移动控制器、攻击前摇中或命令被拒绝时失败。
         /// </summary>
         protected override ActionResult OnUpdate(BehaviorTreeContext context)
         {
@@ -18,6 +18,12 @@ namespace Chess.Behavior
                     out ChessController owner,
                     out ChessController target)
                 || owner.MovementController == null)
+            {
+                return ActionResult.Failure;
+            }
+
+            // 攻击状态/前摇中不得发令，以便远程棋子站桩打完当前前摇。
+            if (ChessBehaviorQueries.IsInAttackOrWindUp(owner))
             {
                 return ActionResult.Failure;
             }
