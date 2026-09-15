@@ -5,6 +5,7 @@ using System.Threading;
 using AutoChess.Bullet;
 using AutoChess.CircularDamage;
 using AutoChess.Navigation;
+using AutoChess.RayDamage;
 using AutoChess.Render;
 using AutoChess.Utils;
 using BehaviorTree;
@@ -32,6 +33,9 @@ namespace AutoChess
         /// <summary>获取圆形范围伤害管理器。</summary>
         public CircularDamageManager CircularDamageManager => _circularDamageManager;
 
+        /// <summary>获取圆形射线伤害管理器。</summary>
+        public RayDamageManager RayDamageManager => _rayDamageManager;
+
         /// <summary>获取棋子配置仓库。</summary>
         public ChessConfigRepository Configs => _configs;
 
@@ -52,6 +56,8 @@ namespace AutoChess
         private readonly BulletManager _bulletManager;
         /// <summary>延迟圆形范围伤害管理器。</summary>
         private readonly CircularDamageManager _circularDamageManager;
+        /// <summary>圆形射线飞行物伤害管理器。</summary>
+        private readonly RayDamageManager _rayDamageManager;
         private readonly ConcurrentQueue<Action> _commands = new ConcurrentQueue<Action>();
         private readonly ConcurrentQueue<NavigationInputSnapshot> _navigationInputs =
             new ConcurrentQueue<NavigationInputSnapshot>();
@@ -95,6 +101,7 @@ namespace AutoChess
             _chessBoard = new ChessBoard();
             _bulletManager = new BulletManager();
             _circularDamageManager = new CircularDamageManager(_campManager);
+            _rayDamageManager = new RayDamageManager(_campManager);
         }
 
         /// <summary>启动唯一的战斗工作线程。</summary>
@@ -153,6 +160,7 @@ namespace AutoChess
                 float step = Math.Max(0f, deltaTime);
                 _bulletManager.Tick(step);
                 _circularDamageManager.Tick(step);
+                _rayDamageManager.Tick(step);
                 return;
             }
 
@@ -244,6 +252,40 @@ namespace AutoChess
             return true;
         }
 
+        /// <summary>
+        /// 立刻拷贝受影响阵营后注册圆形射线伤害；非法参数返回 false。
+        /// </summary>
+        public bool RegisterRayDamage(
+            Vector2 origin,
+            Vector2 direction,
+            float radius,
+            float speed,
+            float maxDistance,
+            IEnumerable<int> affectedCamps,
+            int damage,
+            int maxAffectedCount)
+        {
+            if (!AutoChess.RayDamage.RayDamageManager.TryNormalizeDirection(direction, out _)
+                || !AutoChess.RayDamage.RayDamageManager.AreParametersValid(
+                    origin, radius, speed, maxDistance, damage, maxAffectedCount)
+                || !AutoChess.RayDamage.RayDamageManager.TryCopyAffectedCamps(
+                    affectedCamps, out HashSet<int> camps))
+            {
+                return false;
+            }
+
+            EnqueueOrRun(() => _rayDamageManager.Register(
+                origin,
+                direction,
+                radius,
+                speed,
+                maxDistance,
+                camps,
+                damage,
+                maxAffectedCount));
+            return true;
+        }
+
         /// <summary>校验 ConfigId 是否已注册，缺失时记录错误。</summary>
         private bool TryValidateConfig(int configId)
         {
@@ -327,6 +369,7 @@ namespace AutoChess
             {
                 _bulletManager.Dispose();
                 _circularDamageManager.Dispose();
+                _rayDamageManager.Dispose();
                 _advanceSignal.Dispose();
                 _resourcesDisposed = true;
                 _disposed = true;
@@ -407,6 +450,7 @@ namespace AutoChess
             _campManager.Tick(FixedStep);
             _bulletManager.Tick(FixedStep);
             _circularDamageManager.Tick(FixedStep);
+            _rayDamageManager.Tick(FixedStep);
             PublishNavigationInputs(currentStep);
             PublishRenderFrame(currentStep);
         }
