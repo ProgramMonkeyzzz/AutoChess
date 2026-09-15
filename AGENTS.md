@@ -8,9 +8,9 @@
 
 - **GameManager**: 全局单例管理器，运行在 Unity 主线程，负责加载棋子配置和行为树、创建 `NavigationManager` 和 `RenderManager`、调度 `SimulatorBurst` Job、推进 BattleManager 固定时钟、消费渲染快照、同步血条并输出线程日志
 - **BattleManager**: 战斗系统的核心管理器，处理战斗流程
-  - 构造时初始化 `CampManager`、`ChessBoard`、`BulletManager` 、空的 `ChessConfigRepository` 和空的 `BehaviorTreeRepository`（均不自动从 Resources 加载）
+  - 构造时初始化 `CampManager`、`ChessBoard`、`BulletManager`、`CircularDamageManager`、空的 `ChessConfigRepository` 和空的 `BehaviorTreeRepository`（均不自动从 Resources 加载）
   - `RegisterChess(campId, configId, position)` 按配置工厂创建棋子并立即返回 `UniqueId`；出生点由注册参数写入
-  - 通过 `Tick()` 统一驱动活动子弹，通过 `Dispose()` 释放事件监听和池对象
+  - `RegisterCircularDamage` 先拷贝阵营集合再排队注册；通过 `Tick()` 驱动子弹和圆形范围伤害，`Dispose()` 释放监听和池对象
 - **CampManager**: 阵营管理系统，维护所有阵营数据
   - 使用 `Dictionary<int, CampGroup>` 存储阵营分组
   - 每个 `CampGroup` 使用 `Dictionary<int, HashSet<ChessController>>` 按 `ConfigId` 分组管理棋子实例
@@ -66,11 +66,16 @@
 - **BulletRuntimeData**: 实现 `IPool`，由 `ObjectPool` 获取和回收，保存创建时锁定的伤害快照；`Initialize` 分配新的 `BulletId`，`Dispose` 清零
 - **BulletSpawnEvent**: 攻击控制器与子弹管理器之间的发射事件，携带攻击者、目标和子弹速度
 
+### Circular Damage System
+
+- **CircularDamageManager**: 与 `BulletManager` 同级；外部调用 `Register(center, radius, delay, affectedCamps, damage)`，攻击力在注册时锁定。`Tick` 倒计时，到期后对受影响阵营、中心点落在圆内（含边界）的存活棋子结算；尸体跳过，位置以触发瞬间为准。`delay == 0` 也等到本次 `Tick` 才结算。`Dispose()` 回收未触发实例
+- **CircularDamageRuntimeData**: 实现 `IPool`，保存圆心、半径、剩余延迟、阵营快照和伤害；`Initialize` 分配 `CircularDamageId`，`Dispose` 清零
+
 ### Render System
 
 表现层位于 `Assets/Scripts/Battle/Render/`，命名空间为 `AutoChess.Render`，只在 Unity 主线程运行：
 
-- `BattleManager` 每个固定步在阵营和子弹 Tick 之后发布 `BattleRenderFrame`，只保留最新一帧
+- `BattleManager` 每个固定步在阵营、子弹和圆形范围伤害 Tick 之后发布 `BattleRenderFrame`，只保留最新一帧
 - 快照含存活棋子/活动子弹的 id、阵营、XZ 位置朝向，以及棋子 `HpProgress`；死亡棋子与已命中子弹不入快照
 - `GameManager.RegisterChess` 主线程查配置、建导航代理和棋子视图，成功返回 `UniqueId`；失败返回 `0`
 - `GameManager.UnregisterChess` 先摘代理、视图和血条，再排队从战斗注销
@@ -149,6 +154,7 @@
     - `FSM/`: 棋子有限状态机
     - `Behavior/`: 棋子行为树 Action 与 Conditional
   - `Camp/`: 阵营管理逻辑
+  - `CircularDamage/`: 圆形范围伤害
   - `Render/`: 主线程棋子/子弹表现层
   - `Sandbox/`: SampleScene 战斗测试布阵
 - `Assets/Scripts/Config/`: 运行时配置数据结构
@@ -182,6 +188,7 @@
   - `ChessMovementControllerTests` 覆盖移动命令、远离目标刷新/贴边、状态退出清理、伤害切换、ChessController 统一 Tick 和成功移动命令回切行为
   - `AttackControllerTests` 覆盖目标和射程校验、前摇命中、前摇结束回切移动、攻击冷却、移动中不自动起手、前摇中停止逃离、跨阶段时间步、目标失效取消及缴械配置
   - `BulletManagerTests` 覆盖事件注册、池化生命周期、追踪移动、命中伤害、失效目标和 BattleManager 驱动
+  - `CircularDamageManagerTests` 覆盖注册快照、延迟结算、阵营/范围/死亡过滤、触发时位置、非法参数和 BattleManager 驱动
   - `RenderManagerTests` 覆盖渲染快照建视图、位置朝向同步、死亡/命中清除、重复创建、BattleManager 帧发布和 `HpProgress`
   - `UIHpTests` 覆盖受伤棋子血条创建/满血清除、父子关系以及 `HpTransform` 世界到屏幕同步
   - `BattleTestSpawnerTests` 覆盖空布阵、多阵营顺序、重复阵营、非法/越界坐标跳过，以及注册失败不影响后续棋子
@@ -221,6 +228,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - `AutoChess.Render`: 主线程战斗表现层
 - `UI`: 主线程血条 UI
 - `AutoChess.Sandbox`: SampleScene 战斗测试布阵
+- `AutoChess.CircularDamage`: 圆形范围伤害
 - `AutoChess.Utils`: 通用工具类
 - `AutoChess.Editor`: 编辑器工具
 - `Chess`: 棋子系统
@@ -255,7 +263,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - 状态子类不得绕过 `StateBase` 的生命周期模板，应重写 `OnStateEnterCore`、`OnStateStayCore` 或 `OnStateExitCore`
 - Enter/Exit 行为树各只 Tick 一次；Stay 树到达 `Success`/`Failure` 后下一 Tick `Reset + Start` 再跑，`Running` 继续。若返回 Running，Enter 树在离开状态时取消，Exit 树在退出回调结束时立即取消
 - `ChessController` 创建后 FSM 已处于 `MovementState`；战斗循环应调用 `ChessController.Tick()`，不要再单独驱动 `ChessMovementController.Tick()`
-- `BattleManager` 的棋子、FSM、攻击、伤害和子弹逻辑只在其专属工作线程执行；`GameManager` 只在 Unity 主线程调用 `SimulatorBurst`
+- `BattleManager` 的棋子、FSM、攻击、伤害、子弹和圆形范围伤害逻辑只在其专属工作线程执行；`GameManager` 只在 Unity 主线程调用 `SimulatorBurst`
 - `NavigationManager` 的代理注册、`Tick`、Job `Complete` 和 `Dispose` 必须在创建它的 Unity 主线程调用
 - 战斗线程不得访问 `Time`、`Debug`、`Transform`、`GameObject` 或 Unity 组件；日志通过 `ThreadLogQueue` 转发到主线程
 - 战斗与导航使用固定 `1/60` 秒步长和最多 4 步追赶，通过输入/结果快照交换，允许一帧延迟
@@ -270,6 +278,7 @@ $UnityEditor = "C:\Program Files\Unity\Hub\Editor\2022.3.62f2c1\Editor\Unity.exe
 - `BulletSpeed > 0` 的攻击依赖唯一 `BulletManager` 监听发射事件；没有监听器时记录错误且不回退即时伤害
 - 子弹在创建时快照攻击者当前攻击力，飞行期间攻击力变化不影响命中伤害
 - 子弹命中后必须从活动集合移除并归还 `ObjectPool`，不得重复结算或重复回收
+- 圆形伤害攻击力在注册时锁定，触发时不回查棋子攻击力；范围用棋子中心点，不自动加 `Radius`。`delay == 0` 也要等到管理器 `Tick`；非法参数返回 null
 - 行为树编辑源资产只在 Unity Editor 中使用，修改图后必须显式执行 `Export Bytes` 才会更新运行时 `.bytes`
 - NodeCanvas 原生 `BehaviourTree` 资产与本项目 `BehaviorTreeGraphAsset` 不兼容，不要混用两套运行时
 - 叶节点 Inspector 不能把参数 `List` 直接传给 `PropertyTree.Create(IList)`；空列表会抛出 `There must be at least one target` 并打乱 GraphEditor 的 GUILayout

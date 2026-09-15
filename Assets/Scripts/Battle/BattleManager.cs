@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using AutoChess.Bullet;
+using AutoChess.CircularDamage;
 using AutoChess.Navigation;
 using AutoChess.Render;
 using AutoChess.Utils;
@@ -28,6 +29,9 @@ namespace AutoChess
         /// <summary>获取子弹管理器。</summary>
         public BulletManager BulletManager => _bulletManager;
 
+        /// <summary>获取圆形范围伤害管理器。</summary>
+        public CircularDamageManager CircularDamageManager => _circularDamageManager;
+
         /// <summary>获取棋子配置仓库。</summary>
         public ChessConfigRepository Configs => _configs;
 
@@ -46,6 +50,8 @@ namespace AutoChess
         private readonly BehaviorTreeRepository _behaviorTrees;
         private readonly ChessBoard _chessBoard;
         private readonly BulletManager _bulletManager;
+        /// <summary>延迟圆形范围伤害管理器。</summary>
+        private readonly CircularDamageManager _circularDamageManager;
         private readonly ConcurrentQueue<Action> _commands = new ConcurrentQueue<Action>();
         private readonly ConcurrentQueue<NavigationInputSnapshot> _navigationInputs =
             new ConcurrentQueue<NavigationInputSnapshot>();
@@ -88,6 +94,7 @@ namespace AutoChess
             _campManager = new CampManager(_configs, _behaviorTrees);
             _chessBoard = new ChessBoard();
             _bulletManager = new BulletManager();
+            _circularDamageManager = new CircularDamageManager(_campManager);
         }
 
         /// <summary>启动唯一的战斗工作线程。</summary>
@@ -143,7 +150,9 @@ namespace AutoChess
         {
             if (!_started)
             {
-                _bulletManager.Tick(Math.Max(0f, deltaTime));
+                float step = Math.Max(0f, deltaTime);
+                _bulletManager.Tick(step);
+                _circularDamageManager.Tick(step);
                 return;
             }
 
@@ -211,6 +220,28 @@ namespace AutoChess
         public void UnregisterChess(ChessController chess)
         {
             EnqueueOrRun(() => _campManager.UnregisterChess(chess));
+        }
+
+        /// <summary>
+        /// 立刻拷贝受影响阵营后注册圆形范围伤害；非法参数返回 false。
+        /// </summary>
+        public bool RegisterCircularDamage(
+            Vector2 center,
+            float radius,
+            float delay,
+            IEnumerable<int> affectedCamps,
+            int damage)
+        {
+            if (!AutoChess.CircularDamage.CircularDamageManager.AreParametersValid(
+                    center, radius, delay, damage)
+                || !AutoChess.CircularDamage.CircularDamageManager.TryCopyAffectedCamps(
+                    affectedCamps, out HashSet<int> camps))
+            {
+                return false;
+            }
+
+            EnqueueOrRun(() => _circularDamageManager.Register(center, radius, delay, camps, damage));
+            return true;
         }
 
         /// <summary>校验 ConfigId 是否已注册，缺失时记录错误。</summary>
@@ -295,6 +326,7 @@ namespace AutoChess
             if (stopped)
             {
                 _bulletManager.Dispose();
+                _circularDamageManager.Dispose();
                 _advanceSignal.Dispose();
                 _resourcesDisposed = true;
                 _disposed = true;
@@ -374,6 +406,7 @@ namespace AutoChess
             ApplyPendingNavigationResults(currentStep);
             _campManager.Tick(FixedStep);
             _bulletManager.Tick(FixedStep);
+            _circularDamageManager.Tick(FixedStep);
             PublishNavigationInputs(currentStep);
             PublishRenderFrame(currentStep);
         }
